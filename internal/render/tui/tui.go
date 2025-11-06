@@ -74,7 +74,7 @@ func renderBranch(w io.Writer, node *analyzer.NodeStats, prefix string, isLast b
 func renderLine(node *analyzer.NodeStats, opts Options) string {
 	label := insight.NodeLabel(node)
 
-	self := fmt.Sprintf("self %.2f ms", node.ExclusiveTimeMs)
+	self := fmt.Sprintf("self %.2f ms (workers)", node.ExclusiveTimeMs)
 	share := fmt.Sprintf("%5.1f%%", node.PercentExclusive*100)
 
 	bar := drawBar(node.PercentExclusive, opts.BarWidth)

@@ -136,7 +136,7 @@ func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateDa
 func buildNodeView(node *analyzer.NodeStats) *nodeView {
 	view := &nodeView{
 		Label:    insight.NodeLabel(node),
-		Self:     fmt.Sprintf("%.2f ms", node.ExclusiveTimeMs),
+		Self:     fmt.Sprintf("%.2f ms (workers)", node.ExclusiveTimeMs),
 		Share:    fmt.Sprintf("%.1f%%", node.PercentExclusive*100),
 		BarWidth: math.Min(100, math.Max(0, node.PercentExclusive*100)),
 		Heat:     clamp(node.PercentExclusive*2.5, 0, 1),
@@ -358,10 +358,10 @@ const reportTemplate = `<!DOCTYPE html>
 	{{ define "node" }}
 	<li>
 		<div class="node-card" style="--heat: {{printf "%.3f" .Heat}};">
-			<div class="node-header">
-				<span class="node-label">{{.Label}}</span>
-				<span class="node-metrics">{{.Self}} · {{.Share}}</span>
-			</div>
+		<div class="node-header">
+			<span class="node-label">{{.Label}}</span>
+			<span class="node-metrics">{{.Self}} · {{.Share}}</span>
+		</div>
 			<div class="node-bar"><span style="--width: {{printf "%.2f" .BarWidth}};"></span></div>
 			<div class="node-meta">
 				{{- if .Rows }}<span>{{.Rows}}</span>{{- end }}
