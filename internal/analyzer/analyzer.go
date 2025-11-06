@@ -26,6 +26,7 @@ type NodeStats struct {
 	Node              *model.PlanNode
 	Depth             int
 	Parent            *NodeStats
+	ActualLoops       float64
 	InclusiveTimeMs   float64
 	ExclusiveTimeMs   float64
 	PercentExclusive  float64
@@ -100,6 +101,7 @@ func buildStats(node *model.PlanNode, depth int, parent *NodeStats) *NodeStats {
 		Node:            node,
 		Depth:           depth,
 		Parent:          parent,
+		ActualLoops:     loops,
 		InclusiveTimeMs: inclusive,
 		ActualTotalRows: node.ActualRows * loops,
 		EstimatedRows:   node.PlanRows * loops,

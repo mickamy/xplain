@@ -3,6 +3,7 @@ package insight
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/mickamy/xplain/internal/analyzer"
@@ -44,6 +45,14 @@ func BuildMessages(analysis *analyzer.PlanAnalysis) []Message {
 
 	if msg := parallelLimitMessage(analysis); msg != nil {
 		out = append(out, *msg)
+	}
+
+	for _, msg := range spillMessages(analysis) {
+		out = append(out, msg)
+	}
+
+	for _, msg := range nestedLoopMessages(analysis) {
+		out = append(out, msg)
 	}
 
 	return out
@@ -187,6 +196,94 @@ func parallelLimitMessage(analysis *analyzer.PlanAnalysis) *Message {
 	}
 	text := fmt.Sprintf("Parallel gather reads %.0f rows but LIMIT keeps %.0f — consider adding an index or reducing parallelism", candidate.EstimatedRows, candidate.ActualTotalRows)
 	return &Message{Severity: SeverityWarning, Text: text}
+}
+
+func spillMessages(analysis *analyzer.PlanAnalysis) []Message {
+	if analysis == nil || analysis.Root == nil {
+		return nil
+	}
+	var candidates []*analyzer.NodeStats
+	walkNodes(analysis.Root, func(node *analyzer.NodeStats) {
+		if node == nil || node.Node == nil {
+			return
+		}
+		switch node.Node.NodeType {
+		case "Sort", "Incremental Sort", "Hash", "Hash Join":
+			tempBlocks := node.Buffers.TempRead + node.Buffers.TempWritten
+			if tempBlocks > 0 {
+				candidates = append(candidates, node)
+			}
+		}
+	})
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		ti := candidates[i].Buffers.TempRead + candidates[i].Buffers.TempWritten
+		tj := candidates[j].Buffers.TempRead + candidates[j].Buffers.TempWritten
+		return ti > tj
+	})
+	limit := 2
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	var msgs []Message
+	for _, node := range candidates[:limit] {
+		tempBlocks := node.Buffers.TempRead + node.Buffers.TempWritten
+		label := CompactLabel(node)
+		text := fmt.Sprintf("%s spilled to disk: %s used %d temp buffers (~%s)", node.Node.NodeType, label, tempBlocks, HumanizeBuffers(tempBlocks))
+		switch node.Node.NodeType {
+		case "Sort", "Incremental Sort":
+			text += " — consider increasing work_mem or adding a supporting index"
+		default:
+			text += " — consider increasing work_mem or rewriting the join"
+		}
+		severity := SeverityWarning
+		if tempBlocks >= 20000 {
+			severity = SeverityCritical
+		} else if tempBlocks < 2000 {
+			severity = SeverityInfo
+		}
+		msgs = append(msgs, Message{Severity: severity, Text: text})
+	}
+	return msgs
+}
+
+func nestedLoopMessages(analysis *analyzer.PlanAnalysis) []Message {
+	if analysis == nil || analysis.Root == nil {
+		return nil
+	}
+	var msgs []Message
+	walkNodes(analysis.Root, func(node *analyzer.NodeStats) {
+		if node == nil || node.Node == nil || node.Node.NodeType != "Nested Loop" {
+			return
+		}
+		for _, child := range node.Children {
+			if child == nil || child.Node == nil {
+				continue
+			}
+			if child.ActualLoops <= 100 {
+				continue
+			}
+			if !strings.Contains(child.Node.NodeType, "Scan") {
+				continue
+			}
+			text := fmt.Sprintf("Nested Loop: %s invoked %s %.0f times — consider adding an index or rewriting the join order",
+				CompactLabel(node), CompactLabel(child), child.ActualLoops)
+			severity := SeverityWarning
+			if child.ActualLoops >= 10000 {
+				severity = SeverityCritical
+			} else if child.ActualLoops < 1000 {
+				severity = SeverityInfo
+			}
+			msgs = append(msgs, Message{Severity: severity, Text: text})
+			break
+		}
+	})
+	if len(msgs) > 2 {
+		return msgs[:2]
+	}
+	return msgs
 }
 
 func walkNodes(node *analyzer.NodeStats, fn func(*analyzer.NodeStats)) {
