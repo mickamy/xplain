@@ -395,6 +395,17 @@ func diffCommand(args []string) error {
 			return nil
 		}
 		return os.WriteFile(*output, []byte(content), 0o644)
+	case "json":
+		payload, err := report.JSON()
+		if err != nil {
+			return err
+		}
+		if *output == "" {
+			os.Stdout.Write(payload)
+			os.Stdout.WriteString("\n")
+			return nil
+		}
+		return os.WriteFile(*output, payload, 0o644)
 	default:
 		return fmt.Errorf("unsupported format %q", *format)
 	}

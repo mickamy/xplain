@@ -57,9 +57,15 @@ xplain report --input ./plans/pgbench_hot.json --mode html --out report.html
 ### 4. Diff two plans
 
 ```bash
+```
 xplain diff --base ./plans/before.json \
   --target ./plans/after.json \
   --format md --out plan-regression.md
+
+# machine-readable diff (JSON)
+xplain diff --base ./plans/before.json \
+  --target ./plans/after.json \
+  --format json --out plan-regression.json
 ```
 
 ## Samples

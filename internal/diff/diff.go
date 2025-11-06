@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -19,47 +20,48 @@ type Options struct {
 
 // Report summarises the delta between two plan analyses.
 type Report struct {
-	Summary      SummaryDiff
-	Regressions  []Entry
-	Improvements []Entry
-	Insights     []insightMessage
-	Options      Options
+	Summary      SummaryDiff      `json:"summary"`
+	Regressions  []Entry          `json:"regressions"`
+	Improvements []Entry          `json:"improvements"`
+	Insights     []insightMessage `json:"insights"`
+	Options      Options          `json:"-"`
 }
 
 // SummaryDiff covers high-level execution differences.
 type SummaryDiff struct {
-	BaseExecutionMs   float64
-	TargetExecutionMs float64
-	DeltaExecutionMs  float64
-	PercentExecution  float64
-	BasePlanningMs    float64
-	TargetPlanningMs  float64
-	DeltaPlanningMs   float64
-	PercentPlanning   float64
+	BaseExecutionMs   float64 `json:"base_execution_ms"`
+	TargetExecutionMs float64 `json:"target_execution_ms"`
+	DeltaExecutionMs  float64 `json:"delta_execution_ms"`
+	PercentExecution  float64 `json:"percent_execution"`
+	BasePlanningMs    float64 `json:"base_planning_ms"`
+	TargetPlanningMs  float64 `json:"target_planning_ms"`
+	DeltaPlanningMs   float64 `json:"delta_planning_ms"`
+	PercentPlanning   float64 `json:"percent_planning"`
 }
 
 // Entry captures the delta for a set of nodes with the same signature.
 type Entry struct {
-	Signature        string
-	BaseSelfMs       float64
-	TargetSelfMs     float64
-	DeltaSelfMs      float64
-	PercentChange    float64
-	BaseRows         float64
-	TargetRows       float64
-	BaseRowFactor    float64
-	TargetRowFactor  float64
-	BaseBuffers      float64
-	TargetBuffers    float64
-	DeltaBuffers     float64
-	BaseTempBlocks   float64
-	TargetTempBlocks float64
-	DeltaTempBlocks  float64
+	Signature        string  `json:"signature"`
+	BaseSelfMs       float64 `json:"base_self_ms"`
+	TargetSelfMs     float64 `json:"target_self_ms"`
+	DeltaSelfMs      float64 `json:"delta_self_ms"`
+	PercentChange    float64 `json:"percent_change"`
+	BaseRows         float64 `json:"base_rows"`
+	TargetRows       float64 `json:"target_rows"`
+	BaseRowFactor    float64 `json:"base_row_factor"`
+	TargetRowFactor  float64 `json:"target_row_factor"`
+	BaseBuffers      float64 `json:"base_buffers"`
+	TargetBuffers    float64 `json:"target_buffers"`
+	DeltaBuffers     float64 `json:"delta_buffers"`
+	BaseTempBlocks   float64 `json:"base_temp_blocks"`
+	TargetTempBlocks float64 `json:"target_temp_blocks"`
+	DeltaTempBlocks  float64 `json:"delta_temp_blocks"`
 }
 
 type insightMessage struct {
-	severity string
-	text     string
+	Severity string `json:"severity"`
+	Icon     string `json:"icon"`
+	Message  string `json:"message"`
 }
 
 // Compare builds a diff report for two plan analyses.
@@ -149,7 +151,7 @@ func (r *Report) Markdown() string {
 		b.WriteString("- No notable plan changes detected\n")
 	} else {
 		for _, insight := range r.Insights {
-			b.WriteString(fmt.Sprintf("- %s %s\n", insight.severity, insight.text))
+			b.WriteString(fmt.Sprintf("- %s %s\n", insight.Icon, insight.Message))
 		}
 	}
 	b.WriteString("\n")
@@ -189,6 +191,15 @@ func (r *Report) Markdown() string {
 	return b.String()
 }
 
+// JSON marshals the diff report into an indented JSON document.
+func (r *Report) JSON() ([]byte, error) {
+	if r == nil {
+		return nil, fmt.Errorf("nil report")
+	}
+	type alias Report
+	return json.MarshalIndent((*alias)(r), "", "  ")
+}
+
 func rowsSummary(entry Entry) string {
 	base := formatRows(entry.BaseRows, entry.BaseRowFactor)
 	target := formatRows(entry.TargetRows, entry.TargetRowFactor)
@@ -225,13 +236,16 @@ func synthesizeInsights(r *Report) []insightMessage {
 		} else if entry.DeltaBuffers > 0 {
 			text += fmt.Sprintf(", buffers +%s", humanizeBlocks(entry.DeltaBuffers))
 		}
-		severity := "🔥"
+		icon := "🔥"
+		level := "critical"
 		if entry.DeltaSelfMs < diffCfg.CriticalDeltaMs && entry.DeltaSelfMs >= diffCfg.WarningDeltaMs {
-			severity = "⚠️"
+			icon = "⚠️"
+			level = "warning"
 		} else if entry.DeltaSelfMs < diffCfg.WarningDeltaMs {
-			severity = "⚠️"
+			icon = "⚠️"
+			level = "warning"
 		}
-		insights = append(insights, insightMessage{severity: severity, text: text})
+		insights = append(insights, insightMessage{Severity: level, Icon: icon, Message: text})
 	}
 
 	for i, entry := range r.Improvements {
@@ -244,13 +258,13 @@ func synthesizeInsights(r *Report) []insightMessage {
 		} else if entry.DeltaBuffers < 0 {
 			text += fmt.Sprintf(", buffers %s", humanizeBlocks(entry.DeltaBuffers))
 		}
-		insights = append(insights, insightMessage{severity: "✅", text: text})
+		insights = append(insights, insightMessage{Severity: "improvement", Icon: "✅", Message: text})
 	}
 
 	for _, entry := range r.Regressions {
 		if entry.BaseTempBlocks == 0 && entry.TargetTempBlocks >= insightCfg.SpillNewBlocks {
 			text := fmt.Sprintf("%s began spilling to disk: %.0f temp buffers (~%s)", entry.Signature, entry.TargetTempBlocks, humanizeBlocks(entry.TargetTempBlocks))
-			insights = append(insights, insightMessage{severity: "⚠️", text: text})
+			insights = append(insights, insightMessage{Severity: "warning", Icon: "⚠️", Message: text})
 		}
 	}
 
