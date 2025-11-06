@@ -25,6 +25,7 @@ type PlanAnalysis struct {
 type NodeStats struct {
 	Node              *model.PlanNode
 	Depth             int
+	Parent            *NodeStats
 	InclusiveTimeMs   float64
 	ExclusiveTimeMs   float64
 	PercentExclusive  float64
@@ -63,7 +64,7 @@ func Analyze(explain *model.Explain) (*PlanAnalysis, error) {
 		return nil, fmt.Errorf("analyze: missing plan")
 	}
 
-	root := buildStats(explain.Plan, 0)
+	root := buildStats(explain.Plan, 0, nil)
 	totalTime := root.InclusiveTimeMs
 
 	annotateRatios(root, totalTime)
@@ -87,7 +88,7 @@ func Analyze(explain *model.Explain) (*PlanAnalysis, error) {
 	}, nil
 }
 
-func buildStats(node *model.PlanNode, depth int) *NodeStats {
+func buildStats(node *model.PlanNode, depth int, parent *NodeStats) *NodeStats {
 	loops := node.ActualLoops
 	if loops <= 0 {
 		loops = 1
@@ -98,6 +99,7 @@ func buildStats(node *model.PlanNode, depth int) *NodeStats {
 	stats := &NodeStats{
 		Node:            node,
 		Depth:           depth,
+		Parent:          parent,
 		InclusiveTimeMs: inclusive,
 		ActualTotalRows: node.ActualRows * loops,
 		EstimatedRows:   node.PlanRows * loops,
@@ -117,7 +119,7 @@ func buildStats(node *model.PlanNode, depth int) *NodeStats {
 
 	var childTime float64
 	for _, childNode := range node.Children {
-		child := buildStats(childNode, depth+1)
+		child := buildStats(childNode, depth+1, stats)
 		stats.Children = append(stats.Children, child)
 		childTime += child.InclusiveTimeMs
 	}

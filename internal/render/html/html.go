@@ -45,7 +45,7 @@ type templateData struct {
 	Root          *nodeView
 	HotNodes      []listView
 	Divergent     []listView
-	Insights      []string
+	Insights      []insightView
 }
 
 type summaryView struct {
@@ -64,6 +64,12 @@ type listView struct {
 	Extra string
 }
 
+type insightView struct {
+	Icon     string
+	Severity string
+	Text     string
+}
+
 type nodeView struct {
 	Label      string
 	Self       string
@@ -79,7 +85,15 @@ type nodeView struct {
 
 func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateData {
 	root := buildNodeView(analysis.Root)
-	insights := insight.BuildMessages(analysis)
+	messages := insight.BuildMessages(analysis)
+	insights := make([]insightView, 0, len(messages))
+	for _, msg := range messages {
+		insights = append(insights, insightView{
+			Icon:     severityIcon(msg.Severity),
+			Severity: string(msg.Severity),
+			Text:     msg.Text,
+		})
+	}
 
 	hot := make([]listView, 0, len(analysis.HotNodes))
 	for _, node := range analysis.HotNodes {
@@ -177,6 +191,17 @@ func clamp(value, min, max float64) float64 {
 	return value
 }
 
+func severityIcon(sev insight.Severity) string {
+	switch sev {
+	case insight.SeverityCritical:
+		return "🔥"
+	case insight.SeverityWarning:
+		return "⚠️"
+	default:
+		return "ℹ️"
+	}
+}
+
 const reportTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -216,7 +241,11 @@ const reportTemplate = `<!DOCTYPE html>
 		.node-warning { color: #b25600; font-weight: 600; }
 		.node-children { margin-left: 24px; border-left: 1px dashed rgba(33,42,59,0.15); padding-left: 20px; }
 		.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; }
+		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; display: flex; align-items: center; gap: 10px; }
+		.insight-list li span.icon { font-size: 18px; }
+		.insight-list li.severity-critical { border-left: 4px solid #f44747; }
+		.insight-list li.severity-warning { border-left: 4px solid #faae32; }
+		.insight-list li.severity-info { border-left: 4px solid rgba(33,42,59,0.15); }
 		@media (max-width: 640px) {
 			main { padding: 24px 16px 32px; }
 			.list-card li { grid-template-columns: 1fr auto; grid-template-areas: "label share" "extra extra"; }
@@ -266,7 +295,7 @@ const reportTemplate = `<!DOCTYPE html>
 			<h2>Insights</h2>
 			<ul class="insight-list">
 				{{- range .Insights }}
-				<li>{{ . }}</li>
+				<li class="severity-{{.Severity}}"><span class="icon">{{.Icon}}</span><span>{{.Text}}</span></li>
 				{{- end }}
 			</ul>
 		</section>

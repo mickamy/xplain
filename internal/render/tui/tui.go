@@ -124,13 +124,14 @@ func renderLine(node *analyzer.NodeStats, opts Options) string {
 }
 
 func renderInsights(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) {
-	lines := insight.BuildMessages(analysis)
-	if len(lines) == 0 {
+	messages := insight.BuildMessages(analysis)
+	if len(messages) == 0 {
 		return
 	}
 	fmt.Fprintln(w, "Insights:")
-	for _, line := range lines {
-		fmt.Fprintf(w, "  - %s\n", line)
+	for _, msg := range messages {
+		icon := severityIcon(msg.Severity)
+		fmt.Fprintf(w, "  - %s %s\n", icon, msg.Text)
 	}
 	fmt.Fprintln(w)
 }
@@ -195,4 +196,15 @@ func countDescendants(node *analyzer.NodeStats) int {
 	}
 	walk(node)
 	return total
+}
+
+func severityIcon(sev insight.Severity) string {
+	switch sev {
+	case insight.SeverityCritical:
+		return "🔥"
+	case insight.SeverityWarning:
+		return "⚠️"
+	default:
+		return "ℹ️"
+	}
 }

@@ -9,6 +9,7 @@ It highlights bottlenecks, surfaces skew between estimated and actual rows, and 
 - **Analyzer** – Computes inclusive/exclusive timings, buffer usage, and estimation drift metrics.
 - **TUI renderer** – Prints a colour-coded tree with ratio bars and warnings for hot nodes.
 - **HTML renderer** – Generates a compact, shareable report with heat-mapped cards and summaries.
+- **Insight engine** – Highlights hotspots, estimation drift, buffer churn, and parallel inefficiencies with quick remediation hints.
 - **Diff mode** – Compares two plans and emits Markdown summaries suited for PRs/CI.
 - **Runner** – Executes `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` against a PostgreSQL DSN.
 
@@ -63,6 +64,8 @@ xplain report --input samples/pgbench_hot.json --mode tui
 xplain report --input samples/pgbench_hot.json --mode html --out samples/pgbench_hot.html
 xplain report --input samples/pgbench_branches.json --mode tui
 ```
+
+Each report starts with an *Insights* block that calls out the dominant hotspots, estimator drift, buffer churn, and parallel inefficiencies so you know where to focus first.
 
 To regenerate the plan yourself, point `DATABASE_URL` at a pgbench instance and run:
 

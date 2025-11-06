@@ -8,42 +8,119 @@ import (
 	"github.com/mickamy/xplain/internal/analyzer"
 )
 
-// BuildMessages derives human-readable insight strings for a plan.
-func BuildMessages(analysis *analyzer.PlanAnalysis) []string {
+// Severity expresses the urgency of an insight message.
+type Severity string
+
+const (
+	SeverityInfo     Severity = "info"
+	SeverityWarning  Severity = "warning"
+	SeverityCritical Severity = "critical"
+)
+
+// Message represents an actionable observation about a plan.
+type Message struct {
+	Severity Severity
+	Text     string
+}
+
+// BuildMessages derives human-readable insight messages for a plan.
+func BuildMessages(analysis *analyzer.PlanAnalysis) []Message {
 	if analysis == nil {
 		return nil
 	}
-	var out []string
+	var out []Message
 
-	if len(analysis.HotNodes) > 0 {
-		hot := analysis.HotNodes[0]
-		msg := fmt.Sprintf("Hot spot: %s self %.2f ms (%.1f%%)", CompactLabel(hot), hot.ExclusiveTimeMs, hot.PercentExclusive*100)
-		if buf := hot.Buffers.Total(); buf > 0 {
-			msg += fmt.Sprintf(", buffers %d (~%s)", buf, HumanizeBuffers(buf))
-		}
+	if msg := hotspotMessage(analysis); msg != nil {
+		out = append(out, *msg)
+	}
+
+	for _, msg := range driftMessages(analysis) {
 		out = append(out, msg)
 	}
 
-	maxDivergent := 2
-	for i, node := range analysis.DivergentNodes {
-		if i >= maxDivergent {
-			break
-		}
-		msg := fmt.Sprintf("Estimate drift: %s expected %.0f got %.0f", CompactLabel(node), node.EstimatedRows, node.ActualTotalRows)
-		if ratio := node.RowEstimateFactor; !math.IsNaN(ratio) && !math.IsInf(ratio, 0) {
-			msg += fmt.Sprintf(" (x%.2f)", ratio)
-		} else if math.IsInf(ratio, 1) {
-			msg += " (∞)"
-		}
-		out = append(out, msg)
+	if msg := bufferMessage(analysis); msg != nil {
+		out = append(out, *msg)
 	}
 
-	if candidate := selectBufferCandidate(analysis); candidate != nil {
-		buf := candidate.Buffers.Total()
-		out = append(out, fmt.Sprintf("Buffer churn: %s touched %d buffers (~%s)", CompactLabel(candidate), buf, HumanizeBuffers(buf)))
+	if msg := parallelLimitMessage(analysis); msg != nil {
+		out = append(out, *msg)
 	}
 
 	return out
+}
+
+func hotspotMessage(analysis *analyzer.PlanAnalysis) *Message {
+	if len(analysis.HotNodes) == 0 {
+		return nil
+	}
+	hot := analysis.HotNodes[0]
+	text := fmt.Sprintf("Hot spot: %s self %.2f ms (%.1f%%)", CompactLabel(hot), hot.ExclusiveTimeMs, hot.PercentExclusive*100)
+	if buf := hot.Buffers.Total(); buf > 0 {
+		text += fmt.Sprintf(", buffers %d (~%s)", buf, HumanizeBuffers(buf))
+	}
+	if strings.Contains(hot.Node.NodeType, "Seq Scan") && hot.Buffers.Total() > 5000 {
+		text += " — consider adding an index or tightening the filter"
+	}
+	severity := severityForHotspot(hot)
+	return &Message{Severity: severity, Text: text}
+}
+
+func severityForHotspot(node *analyzer.NodeStats) Severity {
+	if node == nil {
+		return SeverityInfo
+	}
+	switch {
+	case node.PercentExclusive >= 0.4:
+		return SeverityCritical
+	case node.PercentExclusive >= 0.2:
+		return SeverityWarning
+	default:
+		return SeverityInfo
+	}
+}
+
+func driftMessages(analysis *analyzer.PlanAnalysis) []Message {
+	if len(analysis.DivergentNodes) == 0 {
+		return nil
+	}
+	max := 2
+	var msgs []Message
+	for i, node := range analysis.DivergentNodes {
+		if i >= max {
+			break
+		}
+		ratio := node.RowEstimateFactor
+		text := fmt.Sprintf("Estimate drift: %s expected %.0f got %.0f", CompactLabel(node), node.EstimatedRows, node.ActualTotalRows)
+		if !math.IsNaN(ratio) && !math.IsInf(ratio, 0) {
+			text += fmt.Sprintf(" (x%.2f)", ratio)
+		} else if math.IsInf(ratio, 1) {
+			text += " (∞)"
+		}
+		text += " — update statistics (ANALYZE) or review estimates"
+		severity := SeverityWarning
+		if ratio >= 5 || ratio <= 0.2 {
+			severity = SeverityCritical
+		}
+		msgs = append(msgs, Message{Severity: severity, Text: text})
+	}
+	return msgs
+}
+
+func bufferMessage(analysis *analyzer.PlanAnalysis) *Message {
+	candidate := selectBufferCandidate(analysis)
+	if candidate == nil {
+		return nil
+	}
+	buf := candidate.Buffers.Total()
+	text := fmt.Sprintf("Buffer churn: %s touched %d buffers (~%s)", CompactLabel(candidate), buf, HumanizeBuffers(buf))
+	severity := SeverityInfo
+	if buf >= 5000 {
+		severity = SeverityWarning
+	}
+	if buf >= 50000 {
+		severity = SeverityCritical
+	}
+	return &Message{Severity: severity, Text: text}
 }
 
 func selectBufferCandidate(analysis *analyzer.PlanAnalysis) *analyzer.NodeStats {
@@ -76,6 +153,49 @@ func isWrapperNode(nodeType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func parallelLimitMessage(analysis *analyzer.PlanAnalysis) *Message {
+	if analysis == nil || analysis.Root == nil {
+		return nil
+	}
+	var candidate *analyzer.NodeStats
+	walkNodes(analysis.Root, func(node *analyzer.NodeStats) {
+		if candidate != nil {
+			return
+		}
+		if node.Node == nil || node.Parent == nil {
+			return
+		}
+		if !(node.Node.NodeType == "Gather" || node.Node.NodeType == "Gather Merge") {
+			return
+		}
+		if node.Parent.Node == nil || node.Parent.Node.NodeType != "Limit" {
+			return
+		}
+		if node.EstimatedRows <= 0 {
+			return
+		}
+		if node.ActualTotalRows/node.EstimatedRows >= 0.1 {
+			return
+		}
+		candidate = node
+	})
+	if candidate == nil {
+		return nil
+	}
+	text := fmt.Sprintf("Parallel gather reads %.0f rows but LIMIT keeps %.0f — consider adding an index or reducing parallelism", candidate.EstimatedRows, candidate.ActualTotalRows)
+	return &Message{Severity: SeverityWarning, Text: text}
+}
+
+func walkNodes(node *analyzer.NodeStats, fn func(*analyzer.NodeStats)) {
+	if node == nil {
+		return
+	}
+	fn(node)
+	for _, child := range node.Children {
+		walkNodes(child, fn)
 	}
 }
 
