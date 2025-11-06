@@ -29,20 +29,29 @@ xplain version
 
 ```bash
 DATABASE_URL="postgres://postgres:password@localhost:5432/bench" \
-  xplain run --sql ./queries/slow.sql \
-  --out ./plans/slow.json
+  xplain run --sql ./samples/pgbench_hot.sql \
+  --out ./plans/pgbench_hot.json
 ```
+
+Or capture **and** inspect in one go:
+
+```bash
+DATABASE_URL="postgres://postgres:password@localhost:5432/bench" \
+  xplain analyze --sql ./samples/pgbench_hot.sql --mode tui
+```
+
+Pass `--query "SELECT ..."` if you prefer to provide SQL inline.
 
 ### 2. Inspect in the terminal
 
 ```bash
-xplain report --input ./plans/slow.json --mode tui
+xplain report --input ./plans/pgbench_hot.json --mode tui
 ```
 
 ### 3. Produce an HTML report
 
 ```bash
-xplain report --input ./plans/slow.json --mode html --out report.html
+xplain report --input ./plans/pgbench_hot.json --mode html --out report.html
 ```
 
 ### 4. Diff two plans

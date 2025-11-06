@@ -36,6 +36,8 @@ func main() {
 	switch cmd {
 	case "run":
 		err = runCommand(args)
+	case "analyze":
+		err = analyzeCommand(args)
 	case "report":
 		err = reportCommand(args)
 	case "diff":
@@ -65,6 +67,7 @@ Usage:
 
 Commands:
   run      Execute EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) for a query
+  analyze  Run EXPLAIN and render a report in one step
   report   Render a plan report (TUI or HTML)
   diff     Compare two plans and emit a Markdown summary
   version  Show CLI version information
@@ -126,6 +129,107 @@ func runCommand(args []string) error {
 		return err
 	}
 	return os.WriteFile(*outPath, pretty, 0o644)
+}
+
+func analyzeCommand(args []string) error {
+	fs := flag.NewFlagSet("analyze", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {
+		_, _ = fmt.Fprintf(os.Stdout, "Usage: xplain analyze --url <url> (--sql file.sql | --query \"SELECT ...\") [--mode tui|html]\n\nOptions:\n")
+		fs.PrintDefaults()
+	}
+
+	envURL := os.Getenv("DATABASE_URL")
+
+	var (
+		urlFlag    = fs.String("url", envURL, "PostgreSQL connection string; defaults to $DATABASE_URL")
+		sqlPath    = fs.String("sql", "", "Path to the SQL file to EXPLAIN")
+		inlineSQL  = fs.String("query", "", "Inline SQL string to EXPLAIN")
+		mode       = fs.String("mode", "tui", "Output mode: tui or html")
+		outPath    = fs.String("out", "", "Output path (stdout if omitted)")
+		title      = fs.String("title", "xplain report", "Report title (HTML)")
+		color      = fs.Bool("color", true, "Enable ANSI colors for TUI output")
+		maxDepth   = fs.Int("max-depth", 0, "Limit tree depth (TUI)")
+		warnings   = fs.Bool("warnings", true, "Show warnings (TUI)")
+		includeCSS = fs.Bool("css", true, "Include inline styles (HTML)")
+		timeout    = fs.Duration("timeout", 0, "Optional execution timeout, e.g. 45s")
+	)
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fs.SetOutput(os.Stdout)
+			fs.Usage()
+			return nil
+		}
+		return err
+	}
+
+	connection := strings.TrimSpace(*urlFlag)
+	if connection == "" {
+		return fmt.Errorf("--url is required or set $DATABASE_URL")
+	}
+
+	if *sqlPath != "" && *inlineSQL != "" {
+		return fmt.Errorf("specify only one of --sql or --query")
+	}
+
+	var sqlText string
+	if *sqlPath != "" {
+		data, err := os.ReadFile(*sqlPath)
+		if err != nil {
+			return fmt.Errorf("read sql file: %w", err)
+		}
+		sqlText = string(data)
+	} else if *inlineSQL != "" {
+		sqlText = *inlineSQL
+	} else {
+		return fmt.Errorf("--sql or --query is required")
+	}
+
+	ctx := context.Background()
+	result, err := runner.Run(ctx, connection, sqlText, runner.Options{Timeout: *timeout})
+	if err != nil {
+		return err
+	}
+
+	_, analysis, err := parseAnalysisReader(bytes.NewReader(result))
+	if err != nil {
+		return err
+	}
+
+	switch *mode {
+	case "tui":
+		target := io.Writer(os.Stdout)
+		if *outPath != "" {
+			file, err := os.Create(*outPath)
+			if err != nil {
+				return fmt.Errorf("create output: %w", err)
+			}
+			defer file.Close()
+			target = file
+		}
+		return tui.Render(target, analysis, tui.Options{
+			EnableColor:  *color,
+			MaxDepth:     *maxDepth,
+			ShowWarnings: *warnings,
+		})
+	case "html":
+		target := io.Writer(os.Stdout)
+		if *outPath != "" {
+			file, err := os.Create(*outPath)
+			if err != nil {
+				return fmt.Errorf("create output: %w", err)
+			}
+			defer file.Close()
+			target = file
+		}
+		return html.Render(target, analysis, html.Options{
+			Title:         *title,
+			IncludeStyles: *includeCSS,
+		})
+	default:
+		return fmt.Errorf("unknown mode %q (expected tui or html)", *mode)
+	}
 }
 
 func reportCommand(args []string) error {
@@ -343,16 +447,7 @@ func loadAnalysis(path string) (*model.Explain, *analyzer.PlanAnalysis, error) {
 	}
 	defer file.Close()
 
-	plan, err := parser.ParseJSON(file)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	analysis, err := analyzer.Analyze(plan)
-	if err != nil {
-		return nil, nil, err
-	}
-	return plan, analysis, nil
+	return parseAnalysisReader(file)
 }
 
 func indentJSON(data []byte) ([]byte, error) {
@@ -362,4 +457,17 @@ func indentJSON(data []byte) ([]byte, error) {
 	}
 	out.WriteByte('\n')
 	return out.Bytes(), nil
+}
+
+func parseAnalysisReader(r io.Reader) (*model.Explain, *analyzer.PlanAnalysis, error) {
+	plan, err := parser.ParseJSON(r)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	analysis, err := analyzer.Analyze(plan)
+	if err != nil {
+		return nil, nil, err
+	}
+	return plan, analysis, nil
 }
