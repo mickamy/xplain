@@ -49,13 +49,27 @@ xplain diff --base ./plans/before.json \
   --format md --out plan-regression.md
 ```
 
-## Sample
+## Samples
 
-A pared-down sample plan is available at `samples/explain.json`. Try it with:
+The repository includes pgbench-derived examples to try locally:
+
+- `samples/pgbench_hot.sql` / `pgbench_hot.json` — a buffer-intensive query that highlights hotspots
+- `samples/pgbench_branches.sql` / `pgbench_branches.json` — a lightweight lookup over the branches table
+
+Render it in the terminal or export HTML:
 
 ```bash
-xplain report --input samples/explain.json --mode tui
-xplain report --input samples/explain.json --mode html --out sample.html
+xplain report --input samples/pgbench_hot.json --mode tui
+xplain report --input samples/pgbench_hot.json --mode html --out samples/pgbench_hot.html
+xplain report --input samples/pgbench_branches.json --mode tui
+```
+
+To regenerate the plan yourself, point `DATABASE_URL` at a pgbench instance and run:
+
+```bash
+database_url="postgres://postgres:password@localhost:5432/bench"
+DATABASE_URL="$database_url" xplain run --sql samples/pgbench_hot.sql --out samples/pgbench_hot.json
+DATABASE_URL="$database_url" xplain run --sql samples/pgbench_branches.sql --out samples/pgbench_branches.json
 ```
 
 ## Roadmap Ideas
