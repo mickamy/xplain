@@ -70,6 +70,7 @@ The repository includes pgbench-derived examples to try locally:
 - `samples/pgbench_branches.sql` / `pgbench_branches.json` — a lightweight lookup over the branches table
 - `samples/nested_loop_noindex.sql` / `nloop_base.json` / `nloop_index.json` — nested loop before/after adding an index
 - `samples/nloop_diff.md` — Markdown diff comparing those two plans
+- `samples/config.example.json` — configuration template for tuning thresholds
 
 Render it in the terminal or export HTML:
 
@@ -94,6 +95,26 @@ xplain diff --base samples/nloop_base.json \
   --target samples/nloop_index.json \
   --format md --min-delta 0.5 --min-percent 1 \
   --out samples/nloop_diff.md
+
+## Configuration
+
+Thresholds used by the insight engineと diff 出力は JSON 設定で調整できます。
+
+```json
+{
+  "insights": {
+    "hotspot_critical_percent": 0.5,
+    "buffer_warning_blocks": 2000,
+    "nested_loop_warn_loops": 200
+  },
+  "diff": {
+    "min_self_delta_ms": 1.0,
+    "min_percent_change": 2.5
+  }
+}
+```
+
+`--config path/to/config.json` もしくは `XPLAIN_CONFIG` 環境変数を指定すると、全コマンドで読み込まれます。ファイルで指定していない項目はデフォルト値がそのまま使われます。
 ```
 
 ## Roadmap Ideas

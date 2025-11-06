@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mickamy/xplain/internal/analyzer"
+	"github.com/mickamy/xplain/internal/config"
 )
 
 // Options configures the diff sensitivity.
@@ -210,6 +211,9 @@ func synthesizeInsights(r *Report) []insightMessage {
 	}
 	var insights []insightMessage
 	maxItems := 3
+	cfg := config.Active()
+	diffCfg := cfg.Diff
+	insightCfg := cfg.Insights
 
 	for i, entry := range r.Regressions {
 		if i >= maxItems {
@@ -222,7 +226,9 @@ func synthesizeInsights(r *Report) []insightMessage {
 			text += fmt.Sprintf(", buffers +%s", humanizeBlocks(entry.DeltaBuffers))
 		}
 		severity := "🔥"
-		if entry.DeltaSelfMs < 5 && math.Abs(entry.PercentChange) < 20 {
+		if entry.DeltaSelfMs < diffCfg.CriticalDeltaMs && entry.DeltaSelfMs >= diffCfg.WarningDeltaMs {
+			severity = "⚠️"
+		} else if entry.DeltaSelfMs < diffCfg.WarningDeltaMs {
 			severity = "⚠️"
 		}
 		insights = append(insights, insightMessage{severity: severity, text: text})
@@ -242,7 +248,7 @@ func synthesizeInsights(r *Report) []insightMessage {
 	}
 
 	for _, entry := range r.Regressions {
-		if entry.BaseTempBlocks == 0 && entry.TargetTempBlocks >= 100 {
+		if entry.BaseTempBlocks == 0 && entry.TargetTempBlocks >= insightCfg.SpillNewBlocks {
 			text := fmt.Sprintf("%s began spilling to disk: %.0f temp buffers (~%s)", entry.Signature, entry.TargetTempBlocks, humanizeBlocks(entry.TargetTempBlocks))
 			insights = append(insights, insightMessage{severity: "⚠️", text: text})
 		}
@@ -385,14 +391,15 @@ func percentChange(base, target float64) float64 {
 }
 
 func applyDefaults(opts Options) Options {
+	cfg := config.Active().Diff
 	if opts.MinSelfTimeDeltaMs <= 0 {
-		opts.MinSelfTimeDeltaMs = 2.0
+		opts.MinSelfTimeDeltaMs = cfg.MinSelfDeltaMs
 	}
 	if opts.MinPercentChange <= 0 {
-		opts.MinPercentChange = 5.0
+		opts.MinPercentChange = cfg.MinPercentChange
 	}
 	if opts.MaxItems <= 0 {
-		opts.MaxItems = 8
+		opts.MaxItems = cfg.MaxItems
 	}
 	return opts
 }

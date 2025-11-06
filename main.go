@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/mickamy/xplain/internal/analyzer"
+	"github.com/mickamy/xplain/internal/config"
 	"github.com/mickamy/xplain/internal/diff"
 	"github.com/mickamy/xplain/internal/model"
 	"github.com/mickamy/xplain/internal/parser"
@@ -75,6 +76,14 @@ Commands:
 Use "xplain <command> -h" for command-specific help.`)
 }
 
+func applyConfigPath(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = strings.TrimSpace(os.Getenv("XPLAIN_CONFIG"))
+	}
+	return config.Apply(path)
+}
+
 func runCommand(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -86,10 +95,11 @@ func runCommand(args []string) error {
 	envURL := os.Getenv("DATABASE_URL")
 
 	var (
-		urlFlag = fs.String("url", envURL, "PostgreSQL connection string; defaults to $DATABASE_URL")
-		sqlPath = fs.String("sql", "", "Path to the SQL file to EXPLAIN")
-		outPath = fs.String("out", "", "Path to write the resulting JSON (defaults to stdout)")
-		timeout = fs.Duration("timeout", 0, "Optional execution timeout, e.g. 45s")
+		urlFlag    = fs.String("url", envURL, "PostgreSQL connection string; defaults to $DATABASE_URL")
+		sqlPath    = fs.String("sql", "", "Path to the SQL file to EXPLAIN")
+		outPath    = fs.String("out", "", "Path to write the resulting JSON (defaults to stdout)")
+		timeout    = fs.Duration("timeout", 0, "Optional execution timeout, e.g. 45s")
+		configPath = fs.String("config", "", "Path to configuration file (JSON). Falls back to $XPLAIN_CONFIG")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -98,6 +108,12 @@ func runCommand(args []string) error {
 			fs.Usage()
 			return nil
 		}
+		return err
+	}
+	if err := applyConfigPath(*configPath); err != nil {
+		return err
+	}
+	if err := applyConfigPath(*configPath); err != nil {
 		return err
 	}
 	connection := strings.TrimSpace(*urlFlag)
@@ -153,6 +169,7 @@ func analyzeCommand(args []string) error {
 		warnings   = fs.Bool("warnings", true, "Show warnings (TUI)")
 		includeCSS = fs.Bool("css", true, "Include inline styles (HTML)")
 		timeout    = fs.Duration("timeout", 0, "Optional execution timeout, e.g. 45s")
+		configPath = fs.String("config", "", "Path to configuration file (JSON). Falls back to $XPLAIN_CONFIG")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -161,6 +178,9 @@ func analyzeCommand(args []string) error {
 			fs.Usage()
 			return nil
 		}
+		return err
+	}
+	if err := applyConfigPath(*configPath); err != nil {
 		return err
 	}
 
@@ -253,6 +273,7 @@ func reportCommand(args []string) error {
 		maxDepth   = fs.Int("max-depth", 0, "Limit tree depth (TUI)")
 		warnings   = fs.Bool("warnings", true, "Show warnings (TUI)")
 		includeCSS = fs.Bool("css", true, "Include inline styles (HTML)")
+		configPath = fs.String("config", "", "Path to configuration file (JSON). Falls back to $XPLAIN_CONFIG")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -261,6 +282,9 @@ func reportCommand(args []string) error {
 			fs.Usage()
 			return nil
 		}
+		return err
+	}
+	if err := applyConfigPath(*configPath); err != nil {
 		return err
 	}
 	if *input == "" {
@@ -315,8 +339,8 @@ func diffCommand(args []string) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {
-	_, _ = fmt.Fprintf(os.Stdout, "Usage: xplain diff --base base.json --target target.json [--format md]\n\nOptions:\n")
-	fs.PrintDefaults()
+		_, _ = fmt.Fprintf(os.Stdout, "Usage: xplain diff --base base.json --target target.json [--format md]\n\nOptions:\n")
+		fs.PrintDefaults()
 	}
 
 	var (
@@ -324,9 +348,10 @@ func diffCommand(args []string) error {
 		targetPath = fs.String("target", "", "Path to target EXPLAIN JSON")
 		format     = fs.String("format", "md", "Output format (md)")
 		output     = fs.String("out", "", "Output path (stdout if omitted)")
-		minDelta   = fs.Float64("min-delta", 2.0, "Minimum self-time delta in ms to report")
-		minPct     = fs.Float64("min-percent", 5.0, "Minimum percent change to report")
-		maxItems   = fs.Int("limit", 8, "Maximum rows per section")
+		minDelta   = fs.Float64("min-delta", 0, "Minimum self-time delta in ms to report (default from config)")
+		minPct     = fs.Float64("min-percent", 0, "Minimum percent change to report (default from config)")
+		maxItems   = fs.Int("limit", 0, "Maximum rows per section (default from config)")
+		configPath = fs.String("config", "", "Path to configuration file (JSON). Falls back to $XPLAIN_CONFIG")
 	)
 
 	if err := fs.Parse(args); err != nil {
@@ -335,6 +360,9 @@ func diffCommand(args []string) error {
 			fs.Usage()
 			return nil
 		}
+		return err
+	}
+	if err := applyConfigPath(*configPath); err != nil {
 		return err
 	}
 	if *basePath == "" || *targetPath == "" {

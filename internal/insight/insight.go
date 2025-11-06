@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mickamy/xplain/internal/analyzer"
+	"github.com/mickamy/xplain/internal/config"
 )
 
 // Severity expresses the urgency of an insight message.
@@ -63,12 +64,13 @@ func hotspotMessage(analysis *analyzer.PlanAnalysis) *Message {
 	if len(analysis.HotNodes) == 0 {
 		return nil
 	}
+	cfg := config.Active().Insights
 	hot := analysis.HotNodes[0]
 	text := fmt.Sprintf("Hot spot: %s self %.2f ms (%.1f%%)", CompactLabel(hot), hot.ExclusiveTimeMs, hot.PercentExclusive*100)
 	if buf := hot.Buffers.Total(); buf > 0 {
 		text += fmt.Sprintf(", buffers %d (~%s)", buf, HumanizeBuffers(buf))
 	}
-	if strings.Contains(hot.Node.NodeType, "Seq Scan") && hot.Buffers.Total() > 5000 {
+	if strings.Contains(hot.Node.NodeType, "Seq Scan") && int64(hot.Buffers.Total()) > cfg.SeqScanBufferHint {
 		text += " — consider adding an index or tightening the filter"
 	}
 	severity := severityForHotspot(hot)
@@ -79,10 +81,11 @@ func severityForHotspot(node *analyzer.NodeStats) Severity {
 	if node == nil {
 		return SeverityInfo
 	}
+	cfg := config.Active().Insights
 	switch {
-	case node.PercentExclusive >= 0.4:
+	case node.PercentExclusive >= cfg.HotspotCriticalPercent:
 		return SeverityCritical
-	case node.PercentExclusive >= 0.2:
+	case node.PercentExclusive >= cfg.HotspotWarningPercent:
 		return SeverityWarning
 	default:
 		return SeverityInfo
@@ -93,6 +96,7 @@ func driftMessages(analysis *analyzer.PlanAnalysis) []Message {
 	if len(analysis.DivergentNodes) == 0 {
 		return nil
 	}
+	cfg := config.Active().Insights
 	max := 2
 	var msgs []Message
 	for i, node := range analysis.DivergentNodes {
@@ -108,7 +112,7 @@ func driftMessages(analysis *analyzer.PlanAnalysis) []Message {
 		}
 		text += " — update statistics (ANALYZE) or review estimates"
 		severity := SeverityWarning
-		if ratio >= 5 || ratio <= 0.2 {
+		if ratio >= cfg.RowEstimateCriticalHigh || ratio <= cfg.RowEstimateCriticalLow {
 			severity = SeverityCritical
 		}
 		msgs = append(msgs, Message{Severity: severity, Text: text, Anchor: AnchorID(node)})
@@ -121,14 +125,15 @@ func bufferMessage(analysis *analyzer.PlanAnalysis) *Message {
 	if candidate == nil {
 		return nil
 	}
+	cfg := config.Active().Insights
 	buf := candidate.Buffers.Total()
 	text := fmt.Sprintf("Buffer churn: %s touched %d buffers (~%s)", CompactLabel(candidate), buf, HumanizeBuffers(buf))
 	severity := SeverityInfo
-	if buf >= 5000 {
-		severity = SeverityWarning
-	}
-	if buf >= 50000 {
+	switch {
+	case buf >= cfg.BufferCriticalBlocks:
 		severity = SeverityCritical
+	case buf >= cfg.BufferWarningBlocks:
+		severity = SeverityWarning
 	}
 	return &Message{Severity: severity, Text: text, Anchor: AnchorID(candidate)}
 }
@@ -170,6 +175,7 @@ func parallelLimitMessage(analysis *analyzer.PlanAnalysis) *Message {
 	if analysis == nil || analysis.Root == nil {
 		return nil
 	}
+	cfg := config.Active().Insights
 	var candidate *analyzer.NodeStats
 	walkNodes(analysis.Root, func(node *analyzer.NodeStats) {
 		if candidate != nil {
@@ -187,7 +193,7 @@ func parallelLimitMessage(analysis *analyzer.PlanAnalysis) *Message {
 		if node.EstimatedRows <= 0 {
 			return
 		}
-		if node.ActualTotalRows/node.EstimatedRows >= 0.1 {
+		if node.ActualTotalRows/node.EstimatedRows >= cfg.ParallelLimitKeepRatio {
 			return
 		}
 		candidate = node
@@ -203,17 +209,19 @@ func spillMessages(analysis *analyzer.PlanAnalysis) []Message {
 	if analysis == nil || analysis.Root == nil {
 		return nil
 	}
+	cfg := config.Active().Insights
 	var candidates []*analyzer.NodeStats
 	walkNodes(analysis.Root, func(node *analyzer.NodeStats) {
 		if node == nil || node.Node == nil {
 			return
 		}
+		tempBlocks := node.Buffers.TempRead + node.Buffers.TempWritten
+		if float64(tempBlocks) < cfg.SpillNewBlocks {
+			return
+		}
 		switch node.Node.NodeType {
 		case "Sort", "Incremental Sort", "Hash", "Hash Join":
-			tempBlocks := node.Buffers.TempRead + node.Buffers.TempWritten
-			if tempBlocks > 0 {
-				candidates = append(candidates, node)
-			}
+			candidates = append(candidates, node)
 		}
 	})
 	if len(candidates) == 0 {
@@ -254,6 +262,7 @@ func nestedLoopMessages(analysis *analyzer.PlanAnalysis) []Message {
 	if analysis == nil || analysis.Root == nil {
 		return nil
 	}
+	cfg := config.Active().Insights
 	var msgs []Message
 	walkNodes(analysis.Root, func(node *analyzer.NodeStats) {
 		if node == nil || node.Node == nil || node.Node.NodeType != "Nested Loop" {
@@ -263,7 +272,7 @@ func nestedLoopMessages(analysis *analyzer.PlanAnalysis) []Message {
 			if child == nil || child.Node == nil {
 				continue
 			}
-			if child.ActualLoops <= 100 {
+			if child.ActualLoops <= cfg.NestedLoopWarnLoops {
 				continue
 			}
 			if !strings.Contains(child.Node.NodeType, "Scan") {
@@ -272,9 +281,9 @@ func nestedLoopMessages(analysis *analyzer.PlanAnalysis) []Message {
 			text := fmt.Sprintf("Nested Loop: %s invoked %s %.0f times — consider adding an index or rewriting the join order",
 				CompactLabel(node), CompactLabel(child), child.ActualLoops)
 			severity := SeverityWarning
-			if child.ActualLoops >= 10000 {
+			if child.ActualLoops >= cfg.NestedLoopCriticalLoops {
 				severity = SeverityCritical
-			} else if child.ActualLoops < 1000 {
+			} else if child.ActualLoops < cfg.NestedLoopWarnLoops*2 {
 				severity = SeverityInfo
 			}
 			msgs = append(msgs, Message{Severity: severity, Text: text, Anchor: AnchorID(node)})
