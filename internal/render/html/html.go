@@ -26,9 +26,7 @@ func Render(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) error {
 		opts.Title = "xplain report"
 	}
 	data := buildTemplateData(analysis, opts)
-	tpl, err := template.New("report").Funcs(template.FuncMap{
-		"join": strings.Join,
-	}).Parse(reportTemplate)
+	tpl, err := template.New("report").Funcs(template.FuncMap{"join": strings.Join}).Parse(reportTemplate)
 	if err != nil {
 		return fmt.Errorf("html render: compile template: %w", err)
 	}
@@ -68,10 +66,12 @@ type insightView struct {
 	Icon     string
 	Severity string
 	Text     string
+	Anchor   string
 }
 
 type nodeView struct {
 	Label      string
+	Anchor     string
 	Self       string
 	Share      string
 	BarWidth   float64
@@ -92,6 +92,7 @@ func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateDa
 			Icon:     severityIcon(msg.Severity),
 			Severity: string(msg.Severity),
 			Text:     msg.Text,
+			Anchor:   msg.Anchor,
 		})
 	}
 
@@ -136,6 +137,7 @@ func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateDa
 func buildNodeView(node *analyzer.NodeStats) *nodeView {
 	view := &nodeView{
 		Label:    insight.NodeLabel(node),
+		Anchor:   insight.AnchorID(node),
 		Self:     fmt.Sprintf("%.2f ms (workers)", node.ExclusiveTimeMs),
 		Share:    fmt.Sprintf("%.1f%%", node.PercentExclusive*100),
 		BarWidth: math.Min(100, math.Max(0, node.PercentExclusive*100)),
@@ -243,6 +245,9 @@ const reportTemplate = `<!DOCTYPE html>
 		.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; display: flex; align-items: center; gap: 10px; }
 		.insight-list li span.icon { font-size: 18px; }
+		.insight-list li span.insight-text a { color: inherit; text-decoration: none; position: relative; }
+		.insight-list li span.insight-text a::after { content: ""; position: absolute; left: 0; bottom: -2px; width: 100%; height: 1px; background: currentColor; opacity: 0.35; transition: opacity 0.2s; }
+		.insight-list li span.insight-text a:hover::after { opacity: 0.65; }
 		.insight-list li.severity-critical { border-left: 4px solid #f44747; }
 		.insight-list li.severity-warning { border-left: 4px solid #faae32; }
 		.insight-list li.severity-info { border-left: 4px solid rgba(33,42,59,0.15); }
@@ -295,7 +300,13 @@ const reportTemplate = `<!DOCTYPE html>
 			<h2>Insights</h2>
 			<ul class="insight-list">
 				{{- range .Insights }}
-				<li class="severity-{{.Severity}}"><span class="icon">{{.Icon}}</span><span>{{.Text}}</span></li>
+				<li class="severity-{{.Severity}}"><span class="icon">{{.Icon}}</span><span class="insight-text">
+					{{- if .Anchor -}}
+						<a href="#{{.Anchor}}">{{.Text}}</a>
+					{{- else -}}
+						{{.Text}}
+					{{- end -}}
+				</span></li>
 				{{- end }}
 			</ul>
 		</section>
@@ -312,7 +323,7 @@ const reportTemplate = `<!DOCTYPE html>
 					<ul>
 						{{- if .HotNodes }}
 							{{- range .HotNodes }}
-							<li>
+							<li id="signals-{{.Label | urlquery}}">
 								<span>{{.Label}}</span>
 								<span>{{.Self}}</span>
 								<span>{{.Share}}</span>
@@ -332,7 +343,7 @@ const reportTemplate = `<!DOCTYPE html>
 					<ul>
 						{{- if .Divergent }}
 							{{- range .Divergent }}
-							<li>
+							<li id="signals-{{.Label | urlquery}}">
 								<span>{{.Label}}</span>
 								<span>{{.Self}}</span>
 								<span>{{.Share}}</span>
@@ -357,7 +368,7 @@ const reportTemplate = `<!DOCTYPE html>
 
 	{{ define "node" }}
 	<li>
-		<div class="node-card" style="--heat: {{printf "%.3f" .Heat}};">
+		<div class="node-card" id="{{.Anchor}}" style="--heat: {{printf "%.3f" .Heat}};">
 		<div class="node-header">
 			<span class="node-label">{{.Label}}</span>
 			<span class="node-metrics">{{.Self}} · {{.Share}}</span>

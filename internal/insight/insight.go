@@ -22,6 +22,7 @@ const (
 type Message struct {
 	Severity Severity
 	Text     string
+	Anchor   string
 }
 
 // BuildMessages derives human-readable insight messages for a plan.
@@ -71,7 +72,7 @@ func hotspotMessage(analysis *analyzer.PlanAnalysis) *Message {
 		text += " — consider adding an index or tightening the filter"
 	}
 	severity := severityForHotspot(hot)
-	return &Message{Severity: severity, Text: text}
+	return &Message{Severity: severity, Text: text, Anchor: AnchorID(hot)}
 }
 
 func severityForHotspot(node *analyzer.NodeStats) Severity {
@@ -110,7 +111,7 @@ func driftMessages(analysis *analyzer.PlanAnalysis) []Message {
 		if ratio >= 5 || ratio <= 0.2 {
 			severity = SeverityCritical
 		}
-		msgs = append(msgs, Message{Severity: severity, Text: text})
+		msgs = append(msgs, Message{Severity: severity, Text: text, Anchor: AnchorID(node)})
 	}
 	return msgs
 }
@@ -129,7 +130,7 @@ func bufferMessage(analysis *analyzer.PlanAnalysis) *Message {
 	if buf >= 50000 {
 		severity = SeverityCritical
 	}
-	return &Message{Severity: severity, Text: text}
+	return &Message{Severity: severity, Text: text, Anchor: AnchorID(candidate)}
 }
 
 func selectBufferCandidate(analysis *analyzer.PlanAnalysis) *analyzer.NodeStats {
@@ -195,7 +196,7 @@ func parallelLimitMessage(analysis *analyzer.PlanAnalysis) *Message {
 		return nil
 	}
 	text := fmt.Sprintf("Parallel gather reads %.0f rows but LIMIT keeps %.0f — consider adding an index or reducing parallelism", candidate.EstimatedRows, candidate.ActualTotalRows)
-	return &Message{Severity: SeverityWarning, Text: text}
+	return &Message{Severity: SeverityWarning, Text: text, Anchor: AnchorID(candidate)}
 }
 
 func spillMessages(analysis *analyzer.PlanAnalysis) []Message {
@@ -244,7 +245,7 @@ func spillMessages(analysis *analyzer.PlanAnalysis) []Message {
 		} else if tempBlocks < 2000 {
 			severity = SeverityInfo
 		}
-		msgs = append(msgs, Message{Severity: severity, Text: text})
+		msgs = append(msgs, Message{Severity: severity, Text: text, Anchor: AnchorID(node)})
 	}
 	return msgs
 }
@@ -276,7 +277,7 @@ func nestedLoopMessages(analysis *analyzer.PlanAnalysis) []Message {
 			} else if child.ActualLoops < 1000 {
 				severity = SeverityInfo
 			}
-			msgs = append(msgs, Message{Severity: severity, Text: text})
+			msgs = append(msgs, Message{Severity: severity, Text: text, Anchor: AnchorID(node)})
 			break
 		}
 	})
@@ -352,4 +353,19 @@ func SummarizeTotalBuffers(total int64) string {
 // NormalizeWhitespace collapses whitespace for use in HTML or text.
 func NormalizeWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+func AnchorID(node *analyzer.NodeStats) string {
+	if node == nil {
+		return ""
+	}
+	label := NodeLabel(node)
+	label = strings.ToLower(label)
+	label = strings.ReplaceAll(label, " ", "-")
+	label = strings.ReplaceAll(label, "/", "-")
+	label = strings.ReplaceAll(label, "\\", "-")
+	label = strings.ReplaceAll(label, "(", "")
+	label = strings.ReplaceAll(label, ")", "")
+	label = strings.ReplaceAll(label, ",", "")
+	label = strings.ReplaceAll(label, "--", "-")
+	return label
 }
