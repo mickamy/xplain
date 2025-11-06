@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<title>xplain report</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: #f7f7f8; color: #202124; }
+		main { max-width: 960px; margin: 0 auto; padding: 32px 24px 48px; }
+		header { background: #212a3b; color: #f7f7f8; padding: 32px 24px; }
+		header h1 { margin: 0 0 8px; font-size: 28px; }
+		header p { margin: 4px 0; opacity: 0.8; }
+		section { margin-top: 32px; }
+		section h2 { margin-bottom: 12px; font-size: 20px; }
+		.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+		.summary-tile { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 6px 18px rgba(13,28,39,0.12); }
+		.summary-tile strong { display: block; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #5b7083; margin-bottom: 6px; }
+		.summary-tile span { font-size: 18px; font-weight: 600; }
+		.flex-list { display: flex; flex-direction: column; gap: 10px; }
+		.list-card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); }
+		.list-card header { display: flex; justify-content: space-between; align-items: baseline; }
+		.list-card header h3 { margin: 0; font-size: 16px; color: #253043; }
+		.list-card header span { font-size: 13px; color: #5b7083; }
+		.list-card ul { list-style: none; padding: 0; margin: 12px 0 0; }
+		.list-card li { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; font-size: 14px; padding: 8px 0; border-bottom: 1px solid rgba(91,112,131,0.16); }
+		.list-card li:last-child { border-bottom: none; }
+		.plan-tree { list-style: none; margin: 0; padding: 0; }
+		.plan-tree > li { margin-bottom: 12px; }
+		.node-card { background: #fff; border-radius: 12px; margin-bottom: 12px; position: relative; padding: 16px 18px 14px 18px; box-shadow: 0 8px 20px rgba(16,37,58,0.12); border-left: 6px solid rgba(33,42,59,0.1); }
+		.node-card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, rgba(244,71,71,var(--heat)) 0%, rgba(244,71,71,0) 72%); opacity: 0.35; pointer-events: none; }
+		.node-header { position: relative; z-index: 1; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+		.node-label { font-weight: 600; font-size: 15px; }
+		.node-metrics { font-size: 13px; color: #5b7083; }
+		.node-bar { position: relative; z-index: 1; margin-top: 10px; background: rgba(33,42,59,0.08); border-radius: 999px; height: 8px; overflow: hidden; }
+		.node-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #f44747 0%, #faae32 100%); width: calc(var(--width) * 1%); }
+		.node-meta { position: relative; z-index: 1; margin-top: 10px; font-size: 13px; color: #364a63; display: flex; flex-wrap: wrap; gap: 12px 18px; }
+		.node-warning { color: #b25600; font-weight: 600; }
+		.node-children { margin-left: 24px; border-left: 1px dashed rgba(33,42,59,0.15); padding-left: 20px; }
+		.node-card.highlight { outline: 3px solid #f44747; box-shadow: 0 0 0 4px rgba(244,71,71,0.25); }
+		.node-card.highlight::after { opacity: 0.55; }
+		.plan-tree > li:target > .node-card { outline: 3px solid #faae32; }
+		.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; display: flex; align-items: center; gap: 10px; }
+		.insight-list li span.icon { font-size: 18px; }
+		.insight-list li span.insight-text a { color: inherit; text-decoration: none; position: relative; }
+		.insight-list li span.insight-text a::after { content: ""; position: absolute; left: 0; bottom: -2px; width: 100%; height: 1px; background: currentColor; opacity: 0.35; transition: opacity 0.2s; }
+		.insight-list li span.insight-text a:hover::after { opacity: 0.65; }
+		.insight-list li.severity-critical { border-left: 4px solid #f44747; }
+		.insight-list li.severity-warning { border-left: 4px solid #faae32; }
+		.insight-list li.severity-info { border-left: 4px solid rgba(33,42,59,0.15); }
+		@media (max-width: 640px) {
+			main { padding: 24px 16px 32px; }
+			.list-card li { grid-template-columns: 1fr auto; grid-template-areas: "label share" "extra extra"; }
+			.list-card li span:nth-child(3) { grid-area: share; }
+			.list-card li span:nth-child(4) { grid-area: extra; }
+		}
+	</style>
+</head>
+<body>
+	<script>
+	(function() {
+		function clearHighlight() {
+			document.querySelectorAll('.node-card.highlight').forEach(function(el){ el.classList.remove('highlight'); });
+		}
+		document.addEventListener('click', function(ev) {
+			var target = ev.target;
+			if (target.tagName && target.tagName.toLowerCase() === "a") {
+				var href = target.getAttribute('href') || "";
+				if (href.startsWith('#')) {
+					var id = href.slice(1);
+					window.requestAnimationFrame(function(){
+						clearHighlight();
+						var node = document.getElementById(id);
+						if (node) {
+							node.classList.add('highlight');
+						}
+					});
+				}
+			}
+		});
+	})();
+	</script>
+	<header>
+		<h1>xplain report</h1>
+		<p>Execution 676.502 ms · Planning 1.485 ms</p>
+		<p>Nodes 4 · Hot 1 · Divergent 2 · Buffers 656076 blocks (~5.01 GiB)</p>
+	</header>
+	<main>
+		<section>
+			<h2>Highlights</h2>
+			<div class="summary-grid">
+				<div class="summary-tile">
+					<strong>Execution time</strong>
+					<span>676.502 ms</span>
+				</div>
+				<div class="summary-tile">
+					<strong>Planning time</strong>
+					<span>1.485 ms</span>
+				</div>
+				<div class="summary-tile">
+					<strong>Plan nodes</strong>
+					<span>4</span>
+				</div>
+				<div class="summary-tile">
+					<strong>Hot / Divergent</strong>
+					<span>1 / 2</span>
+				</div>
+				<div class="summary-tile">
+					<strong>Total buffers</strong>
+					<span>656076 blocks (~5.01 GiB)</span>
+				</div>
+			</div>
+		</section>
+		<section>
+			<h2>Insights</h2>
+			<ul class="insight-list">
+				<li class="severity-critical"><span class="icon">🔥</span><span class="insight-text"><a href="#seq-scan-pgbench_accounts">Hot spot: Seq Scan pgbench_accounts self 1821.35 ms (269.2%), buffers 163935 (~1.25 GiB) — consider adding an index or tightening the filter</a></span></li>
+				<li class="severity-critical"><span class="icon">🔥</span><span class="insight-text"><a href="#gather-merge">Estimate drift: Gather Merge expected 87500 got 20 (x0.00) — update statistics (ANALYZE) or review estimates</a></span></li>
+				<li class="severity-critical"><span class="icon">🔥</span><span class="insight-text"><a href="#sort">Estimate drift: Sort expected 131250 got 60 (x0.00) — update statistics (ANALYZE) or review estimates</a></span></li>
+				<li class="severity-critical"><span class="icon">🔥</span><span class="insight-text"><a href="#seq-scan-pgbench_accounts">Buffer churn: Seq Scan pgbench_accounts touched 163935 buffers (~1.25 GiB)</a></span></li>
+				<li class="severity-warning"><span class="icon">⚠️</span><span class="insight-text"><a href="#gather-merge">Parallel gather reads 87500 rows but LIMIT keeps 20 — consider adding an index or reducing parallelism</a></span></li>
+			</ul>
+		</section>
+
+		<section>
+			<h2>Signals</h2>
+			<div class="flex-list">
+				<div class="list-card">
+					<header>
+						<h3>Hot nodes</h3>
+						<span>Highest self time share</span>
+					</header>
+					<ul>
+							<li id="signals-Seq&#43;Scan&#43;pgbench_accounts">
+								<span>Seq Scan pgbench_accounts</span>
+								<span>1821.35 ms</span>
+								<span>269.2%</span>
+								<span>rows 99999 / 131250 (x0.76)</span>
+							</li>
+					</ul>
+				</div>
+				<div class="list-card">
+					<header>
+						<h3>Estimate drift</h3>
+						<span>Actual vs expected rows</span>
+					</header>
+					<ul>
+							<li id="signals-Gather&#43;Merge">
+								<span>Gather Merge</span>
+								<span>0.00 ms</span>
+								<span>x0.00</span>
+								<span>rows 20 / 87500 (x0.00)</span>
+							</li>
+							<li id="signals-Sort">
+								<span>Sort</span>
+								<span>7.12 ms</span>
+								<span>x0.00</span>
+								<span>rows 60 / 131250 (x0.00)</span>
+							</li>
+					</ul>
+				</div>
+			</div>
+		</section>
+
+		<section>
+			<h2>Plan Tree</h2>
+			<ul class="plan-tree">
+				
+	<li>
+		<div class="node-card" id="limit" style="--heat: 0.151;">
+		<div class="node-header">
+			<span class="node-label">Limit</span>
+			<span class="node-metrics">40.77 ms (workers) · 6.0%</span>
+		</div>
+			<div class="node-bar"><span style="--width: 6.03;"></span></div>
+			<div class="node-meta"><span>rows 20 / 20 (x1.00)</span><span>buffers total 164047 (~1.25 GiB), shared read 163935, shared hit 112</span>
+			</div>
+		</div>
+		<ul class="node-children">
+				
+	<li>
+		<div class="node-card" id="gather-merge" style="--heat: 0.000;">
+		<div class="node-header">
+			<span class="node-label">Gather Merge</span>
+			<span class="node-metrics">0.00 ms (workers) · 0.0%</span>
+		</div>
+			<div class="node-bar"><span style="--width: 0.00;"></span></div>
+			<div class="node-meta"><span>rows 20 / 87500 (x0.00)</span><span>buffers total 164047 (~1.25 GiB), shared read 163935, shared hit 112</span><span class="node-warning">rows 0.0x lower than estimate</span>
+			</div>
+		</div>
+		<ul class="node-children">
+				
+	<li>
+		<div class="node-card" id="sort" style="--heat: 0.026;">
+		<div class="node-header">
+			<span class="node-label">Sort</span>
+			<span class="node-metrics">7.12 ms (workers) · 1.1%</span>
+		</div>
+			<div class="node-bar"><span style="--width: 1.05;"></span></div>
+			<div class="node-meta"><span>rows 60 / 131250 (x0.00)</span><span>buffers total 164047 (~1.25 GiB), shared read 163935, shared hit 112</span><span class="node-warning">rows 0.0x lower than estimate</span>
+			</div>
+		</div>
+		<ul class="node-children">
+				
+	<li>
+		<div class="node-card" id="seq-scan-pgbench_accounts" style="--heat: 1.000;">
+		<div class="node-header">
+			<span class="node-label">Seq Scan pgbench_accounts</span>
+			<span class="node-metrics">1821.35 ms (workers) · 269.2%</span>
+		</div>
+			<div class="node-bar"><span style="--width: 100.00;"></span></div>
+			<div class="node-meta"><span>rows 99999 / 131250 (x0.76)</span><span>buffers total 163935 (~1.25 GiB), shared read 163935</span>
+			</div>
+		</div>
+	</li>
+	
+		</ul>
+	</li>
+	
+		</ul>
+	</li>
+	
+		</ul>
+	</li>
+	
+			</ul>
+		</section>
+	</main>
+
+	
+</body>
+</html>

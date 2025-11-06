@@ -242,6 +242,9 @@ const reportTemplate = `<!DOCTYPE html>
 		.node-meta { position: relative; z-index: 1; margin-top: 10px; font-size: 13px; color: #364a63; display: flex; flex-wrap: wrap; gap: 12px 18px; }
 		.node-warning { color: #b25600; font-weight: 600; }
 		.node-children { margin-left: 24px; border-left: 1px dashed rgba(33,42,59,0.15); padding-left: 20px; }
+		.node-card.highlight { outline: 3px solid #f44747; box-shadow: 0 0 0 4px rgba(244,71,71,0.25); }
+		.node-card.highlight::after { opacity: 0.55; }
+		.plan-tree > li:target > .node-card { outline: 3px solid #faae32; }
 		.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; display: flex; align-items: center; gap: 10px; }
 		.insight-list li span.icon { font-size: 18px; }
@@ -261,6 +264,29 @@ const reportTemplate = `<!DOCTYPE html>
 	{{- end }}
 </head>
 <body>
+	<script>
+	(function() {
+		function clearHighlight() {
+			document.querySelectorAll('.node-card.highlight').forEach(function(el){ el.classList.remove('highlight'); });
+		}
+		document.addEventListener('click', function(ev) {
+			var target = ev.target;
+			if (target.tagName && target.tagName.toLowerCase() === "a") {
+				var href = target.getAttribute('href') || "";
+				if (href.startsWith('#')) {
+					var id = href.slice(1);
+					window.requestAnimationFrame(function(){
+						clearHighlight();
+						var node = document.getElementById(id);
+						if (node) {
+							node.classList.add('highlight');
+						}
+					});
+				}
+			}
+		});
+	})();
+	</script>
 	<header>
 		<h1>{{.Title}}</h1>
 		<p>Execution {{.Summary.ExecutionTime}} · Planning {{.Summary.PlanningTime}}</p>
