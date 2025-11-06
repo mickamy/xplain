@@ -123,10 +123,10 @@ func (r *Report) Markdown() string {
 	var b strings.Builder
 	b.WriteString("# xplain diff\n\n")
 	b.WriteString("## Summary\n")
-	fmt.Fprintf(&b, "- Execution: %.3f ms → %.3f ms (%+.3f ms, %+.1f%%)\n",
+	_, _ = fmt.Fprintf(&b, "- Execution: %.3f ms → %.3f ms (%+.3f ms, %+.1f%%)\n",
 		r.Summary.BaseExecutionMs, r.Summary.TargetExecutionMs,
 		r.Summary.DeltaExecutionMs, r.Summary.PercentExecution)
-	fmt.Fprintf(&b, "- Planning: %.3f ms → %.3f ms (%+.3f ms, %+.1f%%)\n\n",
+	_, _ = fmt.Fprintf(&b, "- Planning: %.3f ms → %.3f ms (%+.3f ms, %+.1f%%)\n\n",
 		r.Summary.BasePlanningMs, r.Summary.TargetPlanningMs,
 		r.Summary.DeltaPlanningMs, r.Summary.PercentPlanning)
 
@@ -137,7 +137,7 @@ func (r *Report) Markdown() string {
 		b.WriteString("| Operator | Base self (ms) | Target self (ms) | Δ self (ms) | Δ % | Rows (actual / est) |\n")
 		b.WriteString("|---|---:|---:|---:|---:|---|\n")
 		for _, entry := range r.Regressions {
-			fmt.Fprintf(&b, "| %s | %.2f | %.2f | %+.2f | %+.1f%% | %s |\n",
+			_, _ = fmt.Fprintf(&b, "| %s | %.2f | %.2f | %+.2f | %+.1f%% | %s |\n",
 				entry.Signature,
 				entry.BaseSelfMs,
 				entry.TargetSelfMs,
@@ -153,7 +153,7 @@ func (r *Report) Markdown() string {
 		b.WriteString("| Operator | Base self (ms) | Target self (ms) | Δ self (ms) | Δ % | Rows (actual / est) |\n")
 		b.WriteString("|---|---:|---:|---:|---:|---|\n")
 		for _, entry := range r.Improvements {
-			fmt.Fprintf(&b, "| %s | %.2f | %.2f | %+.2f | %+.1f%% | %s |\n",
+			_, _ = fmt.Fprintf(&b, "| %s | %.2f | %.2f | %+.2f | %+.1f%% | %s |\n",
 				entry.Signature,
 				entry.BaseSelfMs,
 				entry.TargetSelfMs,

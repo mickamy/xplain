@@ -32,13 +32,13 @@ func Render(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) error {
 		opts.BarWidth = 20
 	}
 
-	fmt.Fprintf(w, "Execution time %.3f ms (planning %.3f ms)\n", analysis.TotalTimeMs, analysis.PlanningTimeMs)
-	fmt.Fprintf(w, "Nodes %d | Hot nodes >=10%% runtime %d | Divergent estimates %d\n\n",
+	_, _ = fmt.Fprintf(w, "Execution time %.3f ms (planning %.3f ms)\n", analysis.TotalTimeMs, analysis.PlanningTimeMs)
+	_, _ = fmt.Fprintf(w, "Nodes %d | Hot nodes >=10%% runtime %d | Divergent estimates %d\n\n",
 		analysis.NodeCount, len(analysis.HotNodes), len(analysis.DivergentNodes))
 
 	renderInsights(w, analysis, opts)
 
-	fmt.Fprintf(w, "%s\n", renderLine(analysis.Root, opts))
+	_, _ = fmt.Fprintf(w, "%s\n", renderLine(analysis.Root, opts))
 	printChildren(w, analysis.Root, "", opts)
 
 	return nil
@@ -59,11 +59,11 @@ func renderBranch(w io.Writer, node *analyzer.NodeStats, prefix string, isLast b
 	}
 
 	line := renderLine(node, opts)
-	fmt.Fprintf(w, "%s%s%s\n", prefix, connector, line)
+	_, _ = fmt.Fprintf(w, "%s%s%s\n", prefix, connector, line)
 
 	if opts.MaxDepth > 0 && node.Depth >= opts.MaxDepth {
 		if len(node.Children) > 0 {
-			fmt.Fprintf(w, "%s`-- ... (%d more nodes)\n", childPrefix, countDescendants(node))
+			_, _ = fmt.Fprintf(w, "%s`-- ... (%d more nodes)\n", childPrefix, countDescendants(node))
 		}
 		return
 	}
@@ -128,12 +128,12 @@ func renderInsights(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) 
 	if len(messages) == 0 {
 		return
 	}
-	fmt.Fprintln(w, "Insights:")
+	_, _ = fmt.Fprintln(w, "Insights:")
 	for _, msg := range messages {
 		icon := severityIcon(msg.Severity)
-		fmt.Fprintf(w, "  - %s %s\n", icon, msg.Text)
+		_, _ = fmt.Fprintf(w, "  - %s %s\n", icon, msg.Text)
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 }
 
 func drawBar(ratio float64, width int) string {

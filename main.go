@@ -205,7 +205,9 @@ func analyzeCommand(args []string) error {
 			if err != nil {
 				return fmt.Errorf("create output: %w", err)
 			}
-			defer file.Close()
+			defer func() {
+				_ = file.Close()
+			}()
 			target = file
 		}
 		return tui.Render(target, analysis, tui.Options{
@@ -220,7 +222,9 @@ func analyzeCommand(args []string) error {
 			if err != nil {
 				return fmt.Errorf("create output: %w", err)
 			}
-			defer file.Close()
+			defer func() {
+				_ = file.Close()
+			}()
 			target = file
 		}
 		return html.Render(target, analysis, html.Options{
@@ -276,7 +280,9 @@ func reportCommand(args []string) error {
 			if err != nil {
 				return fmt.Errorf("create output: %w", err)
 			}
-			defer file.Close()
+			defer func() {
+				_ = file.Close()
+			}()
 			target = file
 		}
 		return tui.Render(target, analysis, tui.Options{
@@ -291,7 +297,9 @@ func reportCommand(args []string) error {
 			if err != nil {
 				return fmt.Errorf("create output: %w", err)
 			}
-			defer file.Close()
+			defer func() {
+				_ = file.Close()
+			}()
 			target = file
 		}
 		return html.Render(target, analysis, html.Options{
@@ -307,8 +315,8 @@ func diffCommand(args []string) error {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stdout, "Usage: xplain diff --base base.json --target target.json [--format md]\n\nOptions:\n")
-		fs.PrintDefaults()
+	_, _ = fmt.Fprintf(os.Stdout, "Usage: xplain diff --base base.json --target target.json [--format md]\n\nOptions:\n")
+	fs.PrintDefaults()
 	}
 
 	var (
@@ -445,7 +453,9 @@ func loadAnalysis(path string) (*model.Explain, *analyzer.PlanAnalysis, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	return parseAnalysisReader(file)
 }
