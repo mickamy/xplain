@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mickamy/xplain/internal/analyzer"
+	"github.com/mickamy/xplain/internal/insight"
 )
 
 // Options configures the HTML renderer.
@@ -44,6 +45,7 @@ type templateData struct {
 	Root          *nodeView
 	HotNodes      []listView
 	Divergent     []listView
+	Insights      []string
 }
 
 type summaryView struct {
@@ -52,6 +54,7 @@ type summaryView struct {
 	NodeCount     int
 	HotCount      int
 	Divergent     int
+	Buffers       string
 }
 
 type listView struct {
@@ -76,11 +79,12 @@ type nodeView struct {
 
 func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateData {
 	root := buildNodeView(analysis.Root)
+	insights := insight.BuildMessages(analysis)
 
 	hot := make([]listView, 0, len(analysis.HotNodes))
 	for _, node := range analysis.HotNodes {
 		hot = append(hot, listView{
-			Label: labelFor(node),
+			Label: insight.NodeLabel(node),
 			Self:  fmt.Sprintf("%.2f ms", node.ExclusiveTimeMs),
 			Share: fmt.Sprintf("%.1f%%", node.PercentExclusive*100),
 			Extra: formatRows(node),
@@ -90,7 +94,7 @@ func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateDa
 	divergent := make([]listView, 0, len(analysis.DivergentNodes))
 	for _, node := range analysis.DivergentNodes {
 		divergent = append(divergent, listView{
-			Label: labelFor(node),
+			Label: insight.NodeLabel(node),
 			Self:  fmt.Sprintf("%.2f ms", node.ExclusiveTimeMs),
 			Share: fmt.Sprintf("x%.2f", node.RowEstimateFactor),
 			Extra: formatRows(node),
@@ -106,16 +110,18 @@ func buildTemplateData(analysis *analyzer.PlanAnalysis, opts Options) templateDa
 			NodeCount:     analysis.NodeCount,
 			HotCount:      len(analysis.HotNodes),
 			Divergent:     len(analysis.DivergentNodes),
+			Buffers:       insight.SummarizeTotalBuffers(analysis.TotalBuffers),
 		},
 		Root:      root,
 		HotNodes:  hot,
 		Divergent: divergent,
+		Insights:  insights,
 	}
 }
 
 func buildNodeView(node *analyzer.NodeStats) *nodeView {
 	view := &nodeView{
-		Label:    labelFor(node),
+		Label:    insight.NodeLabel(node),
 		Self:     fmt.Sprintf("%.2f ms", node.ExclusiveTimeMs),
 		Share:    fmt.Sprintf("%.1f%%", node.PercentExclusive*100),
 		BarWidth: math.Min(100, math.Max(0, node.PercentExclusive*100)),
@@ -133,17 +139,6 @@ func buildNodeView(node *analyzer.NodeStats) *nodeView {
 	return view
 }
 
-func labelFor(node *analyzer.NodeStats) string {
-	label := node.Node.NodeType
-	if node.Node.RelationName != "" {
-		label = fmt.Sprintf("%s %s", label, node.Node.RelationName)
-	}
-	if node.Node.Alias != "" && node.Node.Alias != node.Node.RelationName {
-		label = fmt.Sprintf("%s (%s)", label, node.Node.Alias)
-	}
-	return label
-}
-
 func formatRows(node *analyzer.NodeStats) string {
 	if node.EstimatedRows == 0 && node.ActualTotalRows == 0 {
 		return ""
@@ -159,7 +154,7 @@ func formatBuffers(node *analyzer.NodeStats) string {
 	if total == 0 {
 		return ""
 	}
-	parts := []string{fmt.Sprintf("total %d", total)}
+	parts := []string{fmt.Sprintf("total %d (~%s)", total, insight.HumanizeBuffers(total))}
 	if node.Buffers.SharedRead > 0 {
 		parts = append(parts, fmt.Sprintf("shared read %d", node.Buffers.SharedRead))
 	}
@@ -220,6 +215,8 @@ const reportTemplate = `<!DOCTYPE html>
 		.node-meta { position: relative; z-index: 1; margin-top: 10px; font-size: 13px; color: #364a63; display: flex; flex-wrap: wrap; gap: 12px 18px; }
 		.node-warning { color: #b25600; font-weight: 600; }
 		.node-children { margin-left: 24px; border-left: 1px dashed rgba(33,42,59,0.15); padding-left: 20px; }
+		.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; }
 		@media (max-width: 640px) {
 			main { padding: 24px 16px 32px; }
 			.list-card li { grid-template-columns: 1fr auto; grid-template-areas: "label share" "extra extra"; }
@@ -233,7 +230,7 @@ const reportTemplate = `<!DOCTYPE html>
 	<header>
 		<h1>{{.Title}}</h1>
 		<p>Execution {{.Summary.ExecutionTime}} · Planning {{.Summary.PlanningTime}}</p>
-		<p>Nodes {{.Summary.NodeCount}} · Hot {{.Summary.HotCount}} · Divergent {{.Summary.Divergent}}</p>
+		<p>Nodes {{.Summary.NodeCount}} · Hot {{.Summary.HotCount}} · Divergent {{.Summary.Divergent}}{{if .Summary.Buffers}} · Buffers {{.Summary.Buffers}}{{end}}</p>
 	</header>
 	<main>
 		<section>
@@ -255,8 +252,25 @@ const reportTemplate = `<!DOCTYPE html>
 					<strong>Hot / Divergent</strong>
 					<span>{{.Summary.HotCount}} / {{.Summary.Divergent}}</span>
 				</div>
+				{{- if .Summary.Buffers }}
+				<div class="summary-tile">
+					<strong>Total buffers</strong>
+					<span>{{.Summary.Buffers}}</span>
+				</div>
+				{{- end }}
 			</div>
 		</section>
+
+		{{- if .Insights }}
+		<section>
+			<h2>Insights</h2>
+			<ul class="insight-list">
+				{{- range .Insights }}
+				<li>{{ . }}</li>
+				{{- end }}
+			</ul>
+		</section>
+		{{- end }}
 
 		<section>
 			<h2>Signals</h2>

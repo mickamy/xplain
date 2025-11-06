@@ -17,6 +17,8 @@ type PlanAnalysis struct {
 	NodeCount       int
 	HotNodes        []*NodeStats
 	DivergentNodes  []*NodeStats
+	BufferHeavy     []*NodeStats
+	TotalBuffers    int64
 }
 
 // NodeStats augments a plan node with computed statistics.
@@ -70,6 +72,7 @@ func Analyze(explain *model.Explain) (*PlanAnalysis, error) {
 
 	hot := selectHotNodes(allNodes)
 	divergent := selectDivergentNodes(allNodes)
+	bufferHeavy, totalBuffers := selectBufferHeavyNodes(allNodes)
 
 	return &PlanAnalysis{
 		Root:            root,
@@ -79,6 +82,8 @@ func Analyze(explain *model.Explain) (*PlanAnalysis, error) {
 		NodeCount:       len(allNodes),
 		HotNodes:        hot,
 		DivergentNodes:  divergent,
+		BufferHeavy:     bufferHeavy,
+		TotalBuffers:    totalBuffers,
 	}, nil
 }
 
@@ -213,6 +218,29 @@ func selectDivergentNodes(nodes []*NodeStats) []*NodeStats {
 		limit = len(out)
 	}
 	return out[:limit]
+}
+
+func selectBufferHeavyNodes(nodes []*NodeStats) ([]*NodeStats, int64) {
+	var total int64
+	candidates := make([]*NodeStats, 0, len(nodes))
+	for _, n := range nodes {
+		b := n.Buffers.Total()
+		total += b
+		if b > 0 {
+			candidates = append(candidates, n)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, total
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Buffers.Total() > candidates[j].Buffers.Total()
+	})
+	limit := 3
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	return candidates[:limit], total
 }
 
 func computeEstimateFactor(estimated, actual float64) float64 {

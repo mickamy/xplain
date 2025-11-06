@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mickamy/xplain/internal/analyzer"
+	"github.com/mickamy/xplain/internal/insight"
 )
 
 // Options controls how the TUI renderer behaves.
@@ -34,6 +35,8 @@ func Render(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) error {
 	fmt.Fprintf(w, "Execution time %.3f ms (planning %.3f ms)\n", analysis.TotalTimeMs, analysis.PlanningTimeMs)
 	fmt.Fprintf(w, "Nodes %d | Hot nodes >=10%% runtime %d | Divergent estimates %d\n\n",
 		analysis.NodeCount, len(analysis.HotNodes), len(analysis.DivergentNodes))
+
+	renderInsights(w, analysis, opts)
 
 	fmt.Fprintf(w, "%s\n", renderLine(analysis.Root, opts))
 	printChildren(w, analysis.Root, "", opts)
@@ -69,15 +72,7 @@ func renderBranch(w io.Writer, node *analyzer.NodeStats, prefix string, isLast b
 }
 
 func renderLine(node *analyzer.NodeStats, opts Options) string {
-	label := node.Node.NodeType
-	if node.Node.RelationName != "" {
-		label = fmt.Sprintf("%s %s", label, node.Node.RelationName)
-		if node.Node.Alias != "" && node.Node.Alias != node.Node.RelationName {
-			label = fmt.Sprintf("%s (%s)", label, node.Node.Alias)
-		}
-	} else if node.Node.Alias != "" {
-		label = fmt.Sprintf("%s (%s)", label, node.Node.Alias)
-	}
+	label := insight.NodeLabel(node)
 
 	self := fmt.Sprintf("self %.2f ms", node.ExclusiveTimeMs)
 	share := fmt.Sprintf("%5.1f%%", node.PercentExclusive*100)
@@ -103,7 +98,7 @@ func renderLine(node *analyzer.NodeStats, opts Options) string {
 
 	bufferInfo := ""
 	if node.Buffers.Total() > 0 {
-		bufferInfo = fmt.Sprintf("buf %d", node.Buffers.Total())
+		bufferInfo = fmt.Sprintf("buf %d (~%s)", node.Buffers.Total(), insight.HumanizeBuffers(node.Buffers.Total()))
 	}
 
 	warningText := ""
@@ -126,6 +121,18 @@ func renderLine(node *analyzer.NodeStats, opts Options) string {
 	}
 
 	return strings.Join(parts, " | ") + warningText
+}
+
+func renderInsights(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) {
+	lines := insight.BuildMessages(analysis)
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "Insights:")
+	for _, line := range lines {
+		fmt.Fprintf(w, "  - %s\n", line)
+	}
+	fmt.Fprintln(w)
 }
 
 func drawBar(ratio float64, width int) string {
