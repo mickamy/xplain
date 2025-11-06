@@ -68,6 +68,8 @@ The repository includes pgbench-derived examples to try locally:
 
 - `samples/pgbench_hot.sql` / `pgbench_hot.json` — a buffer-intensive query that highlights hotspots
 - `samples/pgbench_branches.sql` / `pgbench_branches.json` — a lightweight lookup over the branches table
+- `samples/nested_loop_noindex.sql` / `nloop_base.json` / `nloop_index.json` — nested loop before/after adding an index
+- `samples/nloop_diff.md` — Markdown diff comparing those two plans
 
 Render it in the terminal or export HTML:
 
@@ -86,6 +88,12 @@ To regenerate the plan yourself, point `DATABASE_URL` at a pgbench instance and 
 database_url="postgres://postgres:password@localhost:5432/bench"
 DATABASE_URL="$database_url" xplain run --sql samples/pgbench_hot.sql --out samples/pgbench_hot.json
 DATABASE_URL="$database_url" xplain run --sql samples/pgbench_branches.sql --out samples/pgbench_branches.json
+
+# diff the nested loop scenario once index is added
+xplain diff --base samples/nloop_base.json \
+  --target samples/nloop_index.json \
+  --format md --min-delta 0.5 --min-percent 1 \
+  --out samples/nloop_diff.md
 ```
 
 ## Roadmap Ideas
