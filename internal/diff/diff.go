@@ -21,6 +21,7 @@ type Report struct {
 	Summary      SummaryDiff
 	Regressions  []Entry
 	Improvements []Entry
+	Insights     []insightMessage
 	Options      Options
 }
 
@@ -38,15 +39,26 @@ type SummaryDiff struct {
 
 // Entry captures the delta for a set of nodes with the same signature.
 type Entry struct {
-	Signature       string
-	BaseSelfMs      float64
-	TargetSelfMs    float64
-	DeltaSelfMs     float64
-	PercentChange   float64
-	BaseRows        float64
-	TargetRows      float64
-	BaseRowFactor   float64
-	TargetRowFactor float64
+	Signature        string
+	BaseSelfMs       float64
+	TargetSelfMs     float64
+	DeltaSelfMs      float64
+	PercentChange    float64
+	BaseRows         float64
+	TargetRows       float64
+	BaseRowFactor    float64
+	TargetRowFactor  float64
+	BaseBuffers      float64
+	TargetBuffers    float64
+	DeltaBuffers     float64
+	BaseTempBlocks   float64
+	TargetTempBlocks float64
+	DeltaTempBlocks  float64
+}
+
+type insightMessage struct {
+	severity string
+	text     string
 }
 
 // Compare builds a diff report for two plan analyses.
@@ -115,6 +127,7 @@ func Compare(base, target *analyzer.PlanAnalysis, opts Options) (*Report, error)
 		Improvements: improvements,
 		Options:      opts,
 	}
+	report.Insights = synthesizeInsights(report)
 	return report, nil
 }
 
@@ -129,6 +142,16 @@ func (r *Report) Markdown() string {
 	_, _ = fmt.Fprintf(&b, "- Planning: %.3f ms → %.3f ms (%+.3f ms, %+.1f%%)\n\n",
 		r.Summary.BasePlanningMs, r.Summary.TargetPlanningMs,
 		r.Summary.DeltaPlanningMs, r.Summary.PercentPlanning)
+
+	b.WriteString("### Insights\n")
+	if len(r.Insights) == 0 {
+		b.WriteString("- No notable plan changes detected\n")
+	} else {
+		for _, insight := range r.Insights {
+			b.WriteString(fmt.Sprintf("- %s %s\n", insight.severity, insight.text))
+		}
+	}
+	b.WriteString("\n")
 
 	b.WriteString("### Regressions\n")
 	if len(r.Regressions) == 0 {
@@ -181,10 +204,79 @@ func formatRows(rows, factor float64) string {
 	return fmt.Sprintf("%.0f (x%.2f)", rows, factor)
 }
 
+func synthesizeInsights(r *Report) []insightMessage {
+	if r == nil {
+		return nil
+	}
+	var insights []insightMessage
+	maxItems := 3
+
+	for i, entry := range r.Regressions {
+		if i >= maxItems {
+			break
+		}
+		text := fmt.Sprintf("%s self +%.2f ms (+%.1f%%)", entry.Signature, entry.DeltaSelfMs, entry.PercentChange)
+		if entry.DeltaTempBlocks > 0 {
+			text += fmt.Sprintf(", temp +%s", humanizeBlocks(entry.DeltaTempBlocks))
+		} else if entry.DeltaBuffers > 0 {
+			text += fmt.Sprintf(", buffers +%s", humanizeBlocks(entry.DeltaBuffers))
+		}
+		severity := "🔥"
+		if entry.DeltaSelfMs < 5 && math.Abs(entry.PercentChange) < 20 {
+			severity = "⚠️"
+		}
+		insights = append(insights, insightMessage{severity: severity, text: text})
+	}
+
+	for i, entry := range r.Improvements {
+		if i >= maxItems {
+			break
+		}
+		text := fmt.Sprintf("%s self %.2f ms (%.1f%%)", entry.Signature, entry.DeltaSelfMs, entry.PercentChange)
+		if entry.DeltaTempBlocks < 0 {
+			text += fmt.Sprintf(", temp %s", humanizeBlocks(entry.DeltaTempBlocks))
+		} else if entry.DeltaBuffers < 0 {
+			text += fmt.Sprintf(", buffers %s", humanizeBlocks(entry.DeltaBuffers))
+		}
+		insights = append(insights, insightMessage{severity: "✅", text: text})
+	}
+
+	for _, entry := range r.Regressions {
+		if entry.BaseTempBlocks == 0 && entry.TargetTempBlocks >= 100 {
+			text := fmt.Sprintf("%s began spilling to disk: %.0f temp buffers (~%s)", entry.Signature, entry.TargetTempBlocks, humanizeBlocks(entry.TargetTempBlocks))
+			insights = append(insights, insightMessage{severity: "⚠️", text: text})
+		}
+	}
+
+	return insights
+}
+
+func humanizeBlocks(blocks float64) string {
+	if blocks == 0 {
+		return "0 B"
+	}
+	const blockSize = 8192
+	sign := ""
+	if blocks < 0 {
+		blocks = -blocks
+		sign = "-"
+	}
+	bytes := blocks * blockSize
+	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}
+	idx := 0
+	for bytes >= 1024 && idx < len(units)-1 {
+		bytes /= 1024
+		idx++
+	}
+	return fmt.Sprintf("%s%.2f %s", sign, bytes, units[idx])
+}
+
 type aggregated struct {
 	SelfMs        float64
 	ActualRows    float64
 	EstimatedRows float64
+	Buffers       float64
+	TempBlocks    float64
 }
 
 func aggregate(root *analyzer.NodeStats) map[string]aggregated {
@@ -196,6 +288,8 @@ func aggregate(root *analyzer.NodeStats) map[string]aggregated {
 		entry.SelfMs += n.ExclusiveTimeMs
 		entry.ActualRows += n.ActualTotalRows
 		entry.EstimatedRows += n.EstimatedRows
+		entry.Buffers += float64(n.Buffers.Total())
+		entry.TempBlocks += float64(n.Buffers.TempRead + n.Buffers.TempWritten)
 		result[sig] = entry
 		for _, child := range n.Children {
 			walk(child)
@@ -239,15 +333,21 @@ func buildEntry(sig string, base, target aggregated) Entry {
 	baseFactor := ratio(base.ActualRows, base.EstimatedRows)
 	targetFactor := ratio(target.ActualRows, target.EstimatedRows)
 	return Entry{
-		Signature:       sig,
-		BaseSelfMs:      base.SelfMs,
-		TargetSelfMs:    target.SelfMs,
-		DeltaSelfMs:     target.SelfMs - base.SelfMs,
-		PercentChange:   percentChange(base.SelfMs, target.SelfMs),
-		BaseRows:        base.ActualRows,
-		TargetRows:      target.ActualRows,
-		BaseRowFactor:   baseFactor,
-		TargetRowFactor: targetFactor,
+		Signature:        sig,
+		BaseSelfMs:       base.SelfMs,
+		TargetSelfMs:     target.SelfMs,
+		DeltaSelfMs:      target.SelfMs - base.SelfMs,
+		PercentChange:    percentChange(base.SelfMs, target.SelfMs),
+		BaseRows:         base.ActualRows,
+		TargetRows:       target.ActualRows,
+		BaseRowFactor:    baseFactor,
+		TargetRowFactor:  targetFactor,
+		BaseBuffers:      base.Buffers,
+		TargetBuffers:    target.Buffers,
+		DeltaBuffers:     target.Buffers - base.Buffers,
+		BaseTempBlocks:   base.TempBlocks,
+		TargetTempBlocks: target.TempBlocks,
+		DeltaTempBlocks:  target.TempBlocks - base.TempBlocks,
 	}
 }
 
