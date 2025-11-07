@@ -242,11 +242,11 @@ const reportTemplate = `<!DOCTYPE html>
 		.node-meta { position: relative; z-index: 1; margin-top: 10px; font-size: 13px; color: #364a63; display: flex; flex-wrap: wrap; gap: 12px 18px; }
 		.node-warning { color: #b25600; font-weight: 600; }
 		.node-children { margin-left: 24px; border-left: 1px dashed rgba(33,42,59,0.15); padding-left: 20px; }
-		.node-card.highlight { outline: 3px solid #f44747; box-shadow: 0 0 0 4px rgba(244,71,71,0.25); }
-		.node-card.highlight::after { opacity: 0.55; }
-		.plan-tree > li:target > .node-card { outline: 3px solid #faae32; }
-		.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-		.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; display: flex; align-items: center; gap: 10px; }
+.node-card.highlight { outline: 3px solid #f44747; box-shadow: 0 0 0 4px rgba(244,71,71,0.25); }
+.node-card.highlight::after { opacity: 0.55; }
+.plan-tree > li:target > .node-card { outline: 3px solid #faae32; }
+.insight-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.insight-list li { background: #fff; border-radius: 12px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(13,28,39,0.10); font-size: 14px; color: #253043; display: flex; align-items: center; gap: 10px; }
 		.insight-list li span.icon { font-size: 18px; }
 		.insight-list li span.insight-text a { color: inherit; text-decoration: none; position: relative; }
 		.insight-list li span.insight-text a::after { content: ""; position: absolute; left: 0; bottom: -2px; width: 100%; height: 1px; background: currentColor; opacity: 0.35; transition: opacity 0.2s; }
@@ -269,21 +269,42 @@ const reportTemplate = `<!DOCTYPE html>
 		function clearHighlight() {
 			document.querySelectorAll('.node-card.highlight').forEach(function(el){ el.classList.remove('highlight'); });
 		}
-		document.addEventListener('click', function(ev) {
-			var target = ev.target;
-			if (target.tagName && target.tagName.toLowerCase() === "a") {
-				var href = target.getAttribute('href') || "";
-				if (href.startsWith('#')) {
-					var id = href.slice(1);
-					window.requestAnimationFrame(function(){
-						clearHighlight();
-						var node = document.getElementById(id);
-						if (node) {
-							node.classList.add('highlight');
-						}
-					});
+
+		function highlightTarget(anchor) {
+			if (!anchor || !anchor.startsWith('#')) return;
+			var id = anchor.slice(1);
+			window.requestAnimationFrame(function(){
+				clearHighlight();
+				var node = document.getElementById(id);
+				if (node) {
+					node.classList.add('highlight');
+					node.scrollIntoView({behavior: 'smooth', block: 'center'});
 				}
+			});
+		}
+
+		document.addEventListener('DOMContentLoaded', function(){
+			if (location.hash) {
+				highlightTarget(location.hash);
 			}
+		});
+
+		document.addEventListener('click', function(ev) {
+			var target = ev.target.closest('a[href^=\"#\"]');
+			if (!target) {
+				return;
+			}
+			highlightTarget(target.getAttribute('href'));
+		});
+
+		document.querySelectorAll('.node-card .node-label').forEach(function(label){
+			var anchor = label.getAttribute('data-anchor');
+			if (!anchor) return;
+			label.style.cursor = 'pointer';
+			label.addEventListener('click', function(){
+				location.hash = anchor;
+				highlightTarget('#' + anchor);
+			});
 		});
 	})();
 	</script>

@@ -72,7 +72,7 @@ func renderBranch(w io.Writer, node *analyzer.NodeStats, prefix string, isLast b
 }
 
 func renderLine(node *analyzer.NodeStats, opts Options) string {
-	label := insight.NodeLabel(node)
+	label := formatLabel(node)
 
 	self := fmt.Sprintf("self %.2f ms (workers)", node.ExclusiveTimeMs)
 	share := fmt.Sprintf("%5.1f%%", node.PercentExclusive*100)
@@ -121,6 +121,17 @@ func renderLine(node *analyzer.NodeStats, opts Options) string {
 	}
 
 	return strings.Join(parts, " | ") + warningText
+}
+
+func formatLabel(node *analyzer.NodeStats) string {
+	if node == nil {
+		return ""
+	}
+	label := insight.NodeLabel(node)
+	if len(node.Warnings) > 0 {
+		label = label + " !"
+	}
+	return label
 }
 
 func renderInsights(w io.Writer, analysis *analyzer.PlanAnalysis, opts Options) {
