@@ -127,8 +127,7 @@ Thresholds used by the insight engineと diff 出力は JSON 設定で調整で�
 }
 ```
 
-`--config path/to/config.json` もしくは `XPLAIN_CONFIG` 環境変数を指定すると、全コマンドで読み込まれます。ファイルで指定していない項目はデフォルト値がそのまま使われます。
-```
+Specify `--config path/to/config.json` (or set `XPLAIN_CONFIG`) to override thresholds globally. Any field you omit keeps its default value.
 
 ## Roadmap Ideas
 
