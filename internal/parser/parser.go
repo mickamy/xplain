@@ -109,8 +109,7 @@ func parsePlanNode(data map[string]any, path string) (*model.PlanNode, error) {
 
 	node.Buffers = parseBuffers(data)
 
-	childrenRaw, _ := data["Plans"]
-	childrenSlice := asSlice(childrenRaw)
+	childrenSlice := asSlice(data["Plans"])
 
 	for i, childVal := range childrenSlice {
 		childMap, err := asObject(childVal)

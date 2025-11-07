@@ -37,10 +37,7 @@ func BuildMessages(analysis *analyzer.PlanAnalysis) []Message {
 		out = append(out, *msg)
 	}
 
-	for _, msg := range driftMessages(analysis) {
-		out = append(out, msg)
-	}
-
+	out = append(out, driftMessages(analysis)...)
 	if msg := bufferMessage(analysis); msg != nil {
 		out = append(out, *msg)
 	}
@@ -49,13 +46,8 @@ func BuildMessages(analysis *analyzer.PlanAnalysis) []Message {
 		out = append(out, *msg)
 	}
 
-	for _, msg := range spillMessages(analysis) {
-		out = append(out, msg)
-	}
-
-	for _, msg := range nestedLoopMessages(analysis) {
-		out = append(out, msg)
-	}
+	out = append(out, spillMessages(analysis)...)
+	out = append(out, nestedLoopMessages(analysis)...)
 
 	return out
 }
