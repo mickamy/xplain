@@ -38,6 +38,7 @@ func BuildMessages(analysis *analyzer.PlanAnalysis) []Message {
 	}
 
 	out = append(out, driftMessages(analysis)...)
+	out = append(out, workerImbalanceMessages(analysis)...)
 	if msg := bufferMessage(analysis); msg != nil {
 		out = append(out, *msg)
 	}
@@ -369,4 +370,52 @@ func AnchorID(node *analyzer.NodeStats) string {
 	label = strings.ReplaceAll(label, ",", "")
 	label = strings.ReplaceAll(label, "--", "-")
 	return label
+}
+func workerImbalanceMessages(analysis *analyzer.PlanAnalysis) []Message {
+	if analysis == nil || analysis.Root == nil {
+		return nil
+	}
+	candidates := collectParallelCandidates(analysis.Root)
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].share > candidates[j].share })
+	limit := 3
+	if len(candidates) < limit {
+		limit = len(candidates)
+	}
+	var msgs []Message
+	cfg := config.Active().Insights
+	for _, item := range candidates[:limit] {
+		n := item.node
+		ratio := n.ActualTotalRows / (n.EstimatedRows + 1e-9)
+		if ratio >= cfg.RowEstimateCriticalHigh || ratio <= cfg.RowEstimateCriticalLow {
+			text := fmt.Sprintf("Parallel imbalance: %s returned %.0f rows vs %.0f expected (x%.2f) — check work_mem or join strategy", CompactLabel(n), n.ActualTotalRows, n.EstimatedRows, n.RowEstimateFactor)
+			msgs = append(msgs, Message{Severity: SeverityWarning, Text: text, Anchor: AnchorID(n)})
+		}
+	}
+	return msgs
+}
+
+type imbalanceCandidate struct {
+	node  *analyzer.NodeStats
+	share float64
+}
+
+func collectParallelCandidates(root *analyzer.NodeStats) []imbalanceCandidate {
+	var out []imbalanceCandidate
+	var walk func(*analyzer.NodeStats)
+	walk = func(n *analyzer.NodeStats) {
+		if n == nil {
+			return
+		}
+		if strings.Contains(n.Node.NodeType, "Parallel") && len(n.Children) > 0 {
+			out = append(out, imbalanceCandidate{node: n, share: n.PercentExclusive})
+		}
+		for _, child := range n.Children {
+			walk(child)
+		}
+	}
+	walk(root)
+	return out
 }
