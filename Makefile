@@ -4,7 +4,7 @@ BUILD_DIR = bin
 GORELEASER ?= go tool goreleaser
 VERSION_VARIABLE = main.version
 
-.PHONY: all build install uninstall clean test fmt release snapshot version
+.PHONY: all build install uninstall clean test fmt lint release snapshot version
 
 all: build
 
@@ -37,6 +37,10 @@ test:
 fmt:
 	@echo "📝 Formatting code..."
 	gofmt -w -l .
+
+lint:
+	go vet ./...
+	go tool staticcheck ./...
 
 version:
 	@echo "⚙️  Version information"
