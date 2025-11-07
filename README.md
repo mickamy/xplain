@@ -111,7 +111,7 @@ See `samples/nloop_diff.json` for a full example payload.
 
 ## Configuration
 
-Thresholds used by the insight engineと diff 出力は JSON 設定で調整できます。
+Thresholds used by the insight engine and diff output can be tuned via JSON configuration.
 
 ```json
 {
