@@ -96,6 +96,7 @@ xplain diff --base samples/nloop_base.json \
   --target samples/nloop_index.json \
   --format md --min-delta 0.5 --min-percent 1 \
   --out samples/nloop_diff.md
+```
 
 ### Diff Output Formats
 
