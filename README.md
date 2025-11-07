@@ -57,15 +57,9 @@ xplain report --input ./plans/pgbench_hot.json --mode html --out report.html
 ### 4. Diff two plans
 
 ```bash
-```
 xplain diff --base ./plans/before.json \
   --target ./plans/after.json \
   --format md --out plan-regression.md
-
-# machine-readable diff (JSON)
-xplain diff --base ./plans/before.json \
-  --target ./plans/after.json \
-  --format json --out plan-regression.json
 ```
 
 ## Samples
@@ -75,7 +69,7 @@ The repository includes pgbench-derived examples to try locally:
 - `samples/pgbench_hot.sql` / `pgbench_hot.json` — a buffer-intensive query that highlights hotspots
 - `samples/pgbench_branches.sql` / `pgbench_branches.json` — a lightweight lookup over the branches table
 - `samples/nested_loop_noindex.sql` / `nloop_base.json` / `nloop_index.json` — nested loop before/after adding an index
-- `samples/nloop_diff.md` — Markdown diff comparing those two plans
+- `samples/nloop_diff.md` / `nloop_diff.json` — Markdown and JSON diff comparing those two plans
 - `samples/config.example.json` — configuration template for tuning thresholds
 
 Render it in the terminal or export HTML:
@@ -101,6 +95,19 @@ xplain diff --base samples/nloop_base.json \
   --target samples/nloop_index.json \
   --format md --min-delta 0.5 --min-percent 1 \
   --out samples/nloop_diff.md
+
+### Diff Output Formats
+
+Markdown is the default. For CI or tooling, you can request JSON:
+
+```bash
+xplain diff --base samples/nloop_base.json \
+  --target samples/nloop_index.json \
+  --format json --min-delta 0.5 --min-percent 1 |
+  jq .
+```
+
+See `samples/nloop_diff.json` for a full example payload.
 
 ## Configuration
 

@@ -1,0 +1,39 @@
+{
+  "summary": {
+    "base_execution_ms": 50.86,
+    "target_execution_ms": 48.031,
+    "delta_execution_ms": -2.8290000000000006,
+    "percent_execution": -5.562327959103422,
+    "base_planning_ms": 2.127,
+    "target_planning_ms": 2.786,
+    "delta_planning_ms": 0.6590000000000003,
+    "percent_planning": 30.982604607428314
+  },
+  "regressions": null,
+  "improvements": [
+    {
+      "signature": "Seq Scan · pgbench_accounts",
+      "base_self_ms": 72.371,
+      "target_self_ms": 62.079,
+      "delta_self_ms": -10.291999999999994,
+      "percent_change": -14.221165936632069,
+      "base_rows": 200000,
+      "target_rows": 200000,
+      "base_row_factor": 0.9189149452326693,
+      "target_row_factor": 0.9189149452326693,
+      "base_buffers": 3280,
+      "target_buffers": 3280,
+      "delta_buffers": 0,
+      "base_temp_blocks": 0,
+      "target_temp_blocks": 0,
+      "delta_temp_blocks": 0
+    }
+  ],
+  "insights": [
+    {
+      "severity": "improvement",
+      "icon": "✅",
+      "message": "Seq Scan · pgbench_accounts self -10.29 ms (-14.2%)"
+    }
+  ]
+}
