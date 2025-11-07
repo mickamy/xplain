@@ -39,6 +39,7 @@ func BuildMessages(analysis *analyzer.PlanAnalysis) []Message {
 
 	out = append(out, driftMessages(analysis)...)
 	out = append(out, workerImbalanceMessages(analysis)...)
+	out = append(out, workerShortfallMessages(analysis)...)
 	if msg := bufferMessage(analysis); msg != nil {
 		out = append(out, *msg)
 	}
@@ -418,4 +419,32 @@ func collectParallelCandidates(root *analyzer.NodeStats) []imbalanceCandidate {
 	}
 	walk(root)
 	return out
+}
+
+func workerShortfallMessages(analysis *analyzer.PlanAnalysis) []Message {
+	if analysis == nil || analysis.Root == nil {
+		return nil
+	}
+	var msgs []Message
+	var walk func(*analyzer.NodeStats)
+	walk = func(n *analyzer.NodeStats) {
+		if n == nil || n.Node == nil {
+			return
+		}
+		planned := n.Node.WorkersPlanned
+		launched := n.Node.WorkersLaunched
+		if planned > 0 && launched < planned {
+			text := fmt.Sprintf("Worker shortfall: %s planned %.0f but launched %.0f — adjust parallel settings", CompactLabel(n), planned, launched)
+			severity := SeverityWarning
+			if launched == 0 {
+				severity = SeverityCritical
+			}
+			msgs = append(msgs, Message{Severity: severity, Text: text, Anchor: AnchorID(n)})
+		}
+		for _, child := range n.Children {
+			walk(child)
+		}
+	}
+	walk(analysis.Root)
+	return msgs
 }

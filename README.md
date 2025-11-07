@@ -12,6 +12,7 @@ terminals, HTML, and CI diff workflows.
 - **HTML renderer** – Generates a compact, shareable report with heat-mapped cards and summaries.
 - **Insight engine** – Highlights hotspots, estimation drift, buffer churn, and parallel inefficiencies with quick
   remediation hints.
+  - Spots issues such as nested-loop explosions, buffer churn, new temp spills, parallel worker shortfall/imbalance.
 - **Diff mode** – Compares two plans and emits Markdown summaries suited for PRs/CI.
 - **Runner** – Executes `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` against a PostgreSQL DSN.
 
